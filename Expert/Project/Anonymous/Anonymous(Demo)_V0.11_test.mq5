@@ -19,14 +19,21 @@ enum ENUM_ORDER_FILLING {
 };
 
 input group "---------- General ----------";
-input ulong MagicNumber = 2147483647;
+input ulong BoxMagicNumber = 2147483647;
+input ulong TrendMagicNumber = 2147483648;
 input ENUM_TIMEFRAMES ChartPeriod = PERIOD_H1;
 input ENUM_ORDER_FILLING OrderFilling = 1;
-input group "---------- Bollinger bands variable ----------";
+input group "---------- Bollinger Bands variable ----------";
 input int BandsPeriod = 20;
 input int BandsShift = 0;
 input double Deviation = 2.0;
 input ENUM_APPLIED_PRICE AppliedPrice = PRICE_CLOSE;
+input int SlopePeriod = 3;
+input group "---------- Relative Strength Index variable ----------";
+input int RsiPeriod = 14;
+input group "---------- Pattern variable ----------";
+input double BoxPatternSlope = 3.7;
+input double BoxPatternBBW = 50;
 input group "---------- Risk and money management ----------";
 input double Lots = 0.01;
 input bool HedgeMode = false;
@@ -39,7 +46,7 @@ input double TakeProfit = 500;
 input int Slippage = 10;
 input group "---------- Order management ----------";
 input int PointsGap = 0;
-input int FirstSellPointsGap = 150;
+input int FirstSellPointsGap = 40;
 input int SecondSellPointsGap = 0;
 input int ThirdSellPointsGap = 0;
 input int FirstBuyPointsGap = 40;
@@ -52,8 +59,14 @@ input bool EnableSL = false;
 #include <Trade/SymbolInfo.mqh>
 #include <Trade/Trade.mqh>
 
+struct Slope {
+    double upper, middle, lower, absUpper, absMiddle, absLower;
+};
+
 class TradeValidator {
    public:
+    Slope slope;
+    double bbw;
     string symbol;
     //---
     // buy position variable
@@ -64,8 +77,7 @@ class TradeValidator {
         isTouchedLower;
     bool isSellCloseMiddle;
     //---
-    double balance;
-    double equity;
+    double balance, equity;
     // 10%
     double lotsOneTenth;
     // 50%
@@ -82,7 +94,7 @@ class TradeValidator {
     bool checkActiveBuyPosition();
     bool checkActiveSellPosition();
 
-    bool executeTrade(ENUM_ORDER_TYPE type, double currentPrice, double volume);
+    bool executeTrade(ENUM_ORDER_TYPE type, double currentPrice, double volume, ulong magic);
     bool closePositionHalf(ENUM_ORDER_TYPE type,
                            ENUM_POSITION_TYPE positionType);
 
@@ -98,6 +110,24 @@ class TradeValidator {
         return SymbolInfoDouble(symbol, SYMBOL_ASK) -
                SymbolInfoDouble(symbol, SYMBOL_BID);
     }
+    void getCurrentBollingerBandsSlope(double& lowerBand[],
+                                       double& middleBand[],
+                                       double& upperBand[], int period);
+    void getCurrentBollingerBandwidth(double currentLowerBand,
+                                      double currentMiddleBand,
+                                      double currentUpperBand);
+	bool getBoxTradingBuySignal();
+	bool getBoxTradingSellSignal();
+	bool getTrendTradingBuySignal();
+	bool getTrendTradingSellSignal();
+
+    void displayBBW() { Print("BBW : ", bbw); }
+    void displaySlope() {
+        Print("upper slope : ", slope.upper);
+        Print("middle slope : ", slope.middle);
+        Print("lower slope : ", slope.lower);
+    }
+
     double getBid() { return SymbolInfoDouble(symbol, SYMBOL_BID); }
     double getAsk() { return SymbolInfoDouble(symbol, SYMBOL_ASK); }
 };
@@ -159,7 +189,7 @@ bool TradeValidator::checkActiveSellPosition() {
 }
 
 bool TradeValidator::executeTrade(ENUM_ORDER_TYPE type, double currentPrice,
-                                  double volume) {
+                                  double volume, ulong magic) {
     MqlTradeRequest request = {};
     MqlTradeResult result = {};
 
@@ -185,7 +215,7 @@ bool TradeValidator::executeTrade(ENUM_ORDER_TYPE type, double currentPrice,
         request.tp = TakeProfit;
     }
     request.deviation = Slippage;
-    request.magic = MagicNumber;
+    request.magic = BoxMagicNumber;
     request.comment = "";
 
     bool success = OrderSend(request, result);
@@ -200,11 +230,10 @@ bool TradeValidator::executeTrade(ENUM_ORDER_TYPE type, double currentPrice,
     }
 }
 
-
 bool TradeValidator::closePositionHalf(ENUM_ORDER_TYPE type,
                                        ENUM_POSITION_TYPE positionType) {
-	// POSITION_TYPE_BUY  == 0
-	// POSITION_TYPE_SELL == 1
+    // POSITION_TYPE_BUY  == 0
+    // POSITION_TYPE_SELL == 1
     for (int i = PositionsTotal(); i >= 0; i--) {
         if (positionInfo.SelectByIndex(i)) {
             ENUM_POSITION_TYPE ptype = positionInfo.PositionType();
@@ -214,7 +243,7 @@ bool TradeValidator::closePositionHalf(ENUM_ORDER_TYPE type,
                 Print("info volume : ", positionInfo.Volume());
                 Print("volume : ", volume);
                 if (positionInfo.Symbol() == symbol &&
-                    positionInfo.Magic() == MagicNumber) {
+                    positionInfo.Magic() == BoxMagicNumber) {
                     trade.PositionClosePartial(positionInfo.Ticket(), volume,
                                                0);
                 }
@@ -234,9 +263,8 @@ void TradeValidator::closeAllBuyPosition() {
                 Print("info volume : ", positionInfo.Volume());
                 Print("volume : ", volume);
                 if (positionInfo.Symbol() == symbol &&
-                    positionInfo.Magic() == MagicNumber) {
-                    trade.PositionClosePartial(positionInfo.Ticket(), volume,
-                                               0);
+                    positionInfo.Magic() == BoxMagicNumber) {
+                    trade.PositionClose(positionInfo.Ticket(), 0);
                 }
             }
         }
@@ -255,15 +283,49 @@ void TradeValidator::closeAllSellPosition() {
                 Print("info volume : ", positionInfo.Volume());
                 Print("volume : ", volume);
                 if (positionInfo.Symbol() == symbol &&
-                    positionInfo.Magic() == MagicNumber) {
-                    trade.PositionClosePartial(positionInfo.Ticket(), volume,
-                                               0);
+                    positionInfo.Magic() == BoxMagicNumber) {
+                    trade.PositionClose(positionInfo.Ticket(), 0);
                 }
             }
         }
     }
     isUpperBroken = isCrossedBelowUpper = isSellTouchedMiddle = isTouchedLower =
         isSellCloseMiddle = false;
+}
+
+void TradeValidator::getCurrentBollingerBandsSlope(double& lowerBand[],
+                                                   double& middleBand[],
+                                                   double& upperBand[],
+                                                   int period) {
+    slope.lower = ((lowerBand[0] - lowerBand[period - 1]) / (period - 1)) * 10000;
+    slope.middle = ((middleBand[0] - middleBand[period - 1]) / (period - 1)) * 10000;
+    slope.upper = ((upperBand[0] - upperBand[period - 1]) / (period - 1)) * 10000;
+
+	slope.absLower = MathAbs(slope.lower);
+	slope.absMiddle = MathAbs(slope.middle);
+	slope.absUpper = MathAbs(slope.upper);
+}
+
+void TradeValidator::getCurrentBollingerBandwidth(double currentLowerBand,
+                                                  double currentMiddleBand,
+                                                  double currentUpperBand) {
+    bbw = ((currentUpperBand - currentLowerBand) / currentMiddleBand) * 10000;
+}
+
+bool TradeValidator::getBoxTradingBuySignal() {
+	return 
+}
+
+bool TradeValidator::getBoxTradingSellSignal() {
+	return true;
+}
+
+bool TradeValidator::getTrendTradingBuySignal() {
+	return true;
+}
+
+bool TradeValidator::getTrendTradingSellSignal() {
+	return true;
 }
 
 CTrade trade;
@@ -273,22 +335,26 @@ CHistoryOrderInfo historyOrderInfo;
 CDealInfo dealInfo;
 
 TradeValidator validator;
-
-double upperBand[], middleBand[], lowerBand[];
-int handleBand;
+int handleBand, handleRsi;
 
 int OnInit() {
     handleBand = iBands(_Symbol, ChartPeriod, BandsPeriod, BandsShift,
                         Deviation, AppliedPrice);
+	handleRsi = iRSI(_Symbol, ChartPeriod, RsiPeriod, AppliedPrice);
 
     if (handleBand == INVALID_HANDLE) {
         Print("Failed to create Bollinger Bands");
         return INIT_FAILED;
     }
 
+	if (handleRsi == INVALID_HANDLE) {
+		Print("Failed to create RSI");
+		return INIT_FAILED;
+	}
+
     //---
     if (HedgeMode) trade.SetMarginMode();
-    trade.SetExpertMagicNumber(MagicNumber);
+    trade.SetExpertMagicNumber(BoxMagicNumber);
 
     return (INIT_SUCCEEDED);
 }
@@ -297,19 +363,21 @@ void OnDeinit(const int reason) {}
 
 void OnTick() {
     // get bollinger bands middle, lower, upper line.
-	
-	ArraySetAsSeries(middleBand, true);
-	ArraySetAsSeries(lowerBand, true);
-	ArraySetAsSeries(upperBand, true);
+	double upperBand[], middleBand[], lowerBand[];
+	double rsi[];
 
-	if (CopyBuffer(handleBand, BASE_LINE, 0, 6, middleBand) < 6 ||
-        CopyBuffer(handleBand, LOWER_BAND, 0, 6, lowerBand) < 6 ||
-        CopyBuffer(handleBand, UPPER_BAND, 0, 6, upperBand) < 6) {
+    ArraySetAsSeries(middleBand, true);
+    ArraySetAsSeries(lowerBand, true);
+    ArraySetAsSeries(upperBand, true);
+	ArraySetAsSeries(rsi, true);
+
+    if (CopyBuffer(handleBand, BASE_LINE, 0, 4, middleBand) < 4 ||
+        CopyBuffer(handleBand, LOWER_BAND, 0, 4, lowerBand) < 4 ||
+        CopyBuffer(handleBand, UPPER_BAND, 0, 4, upperBand) < 4 ||
+		CopyBuffer(handleRsi, 0, 0, 5, rsi) < 0) {
         Print("Error copying indicator values : ", GetLastError());
         return;
     }
-
-
 
     validator.loadAccountInfo();
     if (validator.calculateLots() < MINIMUM_LOTS) {
@@ -325,6 +393,10 @@ void OnTick() {
     double prevMiddleBand = middleBand[PREVIOUS];
     double prevLowerBand = lowerBand[PREVIOUS];
 
+	// rsi values
+	double currentRsi = rsi[CURRENT];
+	double prevRsi = rsi[PREVIOUS];
+
     // previous candle info
     double prevClosePrice = iClose(_Symbol, ChartPeriod, PREVIOUS);
     double prevOpenPrice = iOpen(_Symbol, ChartPeriod, PREVIOUS);
@@ -335,7 +407,17 @@ void OnTick() {
     double bidPrice = validator.getBid();
     double askPrice = validator.getAsk();
     double currentPrice = (validator.getAsk() + validator.getBid()) / 2.0;
-	
+
+    validator.getCurrentBollingerBandsSlope(lowerBand, middleBand, upperBand,
+                                            SlopePeriod);
+    validator.getCurrentBollingerBandwidth(currentLowerBand, currentMiddleBand,
+                                           currentUpperBand);
+
+    bool boxTradingBuySignal = validator.getBoxTradingBuySignal();
+	bool boxTradingSellSignal = validator.getBoxTradingSellSignal();
+    bool trendTradingBuySignal = validator.getTrendTradingBuySignal();
+    bool trendTradingSellSignal = validator.getTrendTradingSellSignal();
+
     //--- order buy and sell
     //--- buy order section
     // first buy
@@ -344,7 +426,7 @@ void OnTick() {
             currentLowerBand - validator.calculatePip(FirstBuyPointsGap) &&
         validator.checkActiveBuyPosition()) {
         validator.executeTrade(ORDER_TYPE_BUY, currentPrice,
-                               validator.lotsOneTenth);
+                               validator.lotsOneTenth, BoxMagicNumber);
         validator.isLowerBroken = true;
     }
     // second buy
@@ -352,14 +434,14 @@ void OnTick() {
         !validator.isCrossedAboveLower && !validator.isBuyTouchedMiddle &&
         !validator.isTouchedUpper && currentPrice > currentLowerBand) {
         validator.executeTrade(ORDER_TYPE_BUY, currentPrice,
-                               validator.lotsOneHalf);
+                               validator.lotsOneHalf, BoxMagicNumber);
         validator.isCrossedAboveLower = true;
     }
     // thrid buy
     if (validator.isBuyCloseMiddle && !validator.isBuyTouchedMiddle &&
         !validator.isTouchedUpper && currentPrice >= currentMiddleBand) {
         validator.executeTrade(ORDER_TYPE_BUY, currentPrice,
-                               validator.lotsOneHalf);
+                               validator.lotsOneHalf, BoxMagicNumber);
         validator.isBuyTouchedMiddle = true;
     }
     //--- sell order section
@@ -369,7 +451,7 @@ void OnTick() {
             currentUpperBand + validator.calculatePip(FirstSellPointsGap) &&
         validator.checkActiveSellPosition()) {
         validator.executeTrade(ORDER_TYPE_SELL, currentPrice,
-                               validator.lotsOneTenth);
+                               validator.lotsOneTenth, BoxMagicNumber);
         validator.isUpperBroken = true;
     }
     // second sell
@@ -377,15 +459,14 @@ void OnTick() {
         !validator.isCrossedBelowUpper && !validator.isSellTouchedMiddle &&
         !validator.isTouchedLower && currentPrice < currentUpperBand) {
         validator.executeTrade(ORDER_TYPE_SELL, currentPrice,
-                               validator.lotsOneHalf);
+                               validator.lotsOneHalf, BoxMagicNumber);
         validator.isCrossedBelowUpper = true;
     }
     // thrid sell
-    if (validator.isUpperBroken && validator.isCrossedBelowUpper &&
-        !validator.isSellTouchedMiddle && !validator.isTouchedLower &&
-        currentPrice <= currentMiddleBand) {
+    if (validator.isSellCloseMiddle && !validator.isSellTouchedMiddle &&
+        !validator.isTouchedLower && currentPrice <= currentMiddleBand) {
         validator.executeTrade(ORDER_TYPE_SELL, currentPrice,
-                               validator.lotsOneHalf);
+                               validator.lotsOneHalf, BoxMagicNumber);
         validator.isSellTouchedMiddle = true;
     }
     //---
@@ -411,7 +492,6 @@ void OnTick() {
             currentMiddleBand - validator.calculatePip(StopLossGap)) {
         validator.closeAllBuyPosition();
     }
-
     // close sell 50%
     if (validator.isUpperBroken && validator.isCrossedBelowUpper &&
         currentPrice <=
@@ -432,26 +512,6 @@ void OnTick() {
             currentMiddleBand + validator.calculatePip(StopLossGap)) {
         validator.closeAllSellPosition();
     }
-
-	double bbw = ((currentUpperBand - currentLowerBand) / currentMiddleBand) * 100;
-
-	Print("bbw : ", bbw);
-
-	double upperSlope = calculateSlope(upperBand, 5);
-	double middleSlope = calculateSlope(middleBand, 5);
-	double lowerSlope = calculateSlope(lowerBand, 5);
-
-	Print("upper slope : ", upperSlope);
-	Print("middle slope : ", middleSlope);
-	Print("lower slope : ", lowerSlope);
-}
-
-double calculateSlope(double& band[], int period) {
-	if (period < 2) return 0;
-
-	double slope = (band[0] - band[period - 1]) / (period - 1);
-
-	return slope;
 }
 
 /*
