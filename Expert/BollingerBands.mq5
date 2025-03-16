@@ -10,9 +10,10 @@
 #property description \ "Indicators such as Moving Average and Bollinger Bands removed from the chat after closing the EA."
 #property description "Small errors with closing the positions after time."
 
-input group "---------- General ----------" input ulong Magic =
-    111111111111;  // Magic number
-input group "---------- Risk- and Moneymanagement ----------" enum my_lots {
+input group "---------- General ----------" 
+input ulong Magic = 111111111111;  // Magic number
+input group "---------- Risk- and Moneymanagement ----------"
+enum my_lots {
     fixed_volume = 1,    // Fixed volume
     procent_volume = 2,  // Procent volume
 };
