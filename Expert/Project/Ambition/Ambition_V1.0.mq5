@@ -6,6 +6,11 @@
 #property link "https://github.com/hayan2"
 #property version "1.00"
 
+#define CURRENT 0
+#define PREVIOUS 1
+#define ONE_HALF 0.5
+#define ONE_TENTH 0.1
+
 input group "---------- General ----------";
 input ulong MagicNumber = 2147483647;
 input ENUM_TIMEFRAMES ChartPeriod = PERIOD_H1;
@@ -19,6 +24,7 @@ input double Lots = 0.01;
 input bool HedgeMode = false;
 input double TakeProfitPercent = 0.05;
 input double MarginPercent = 0.1;
+input double trueIsBalanceFalseIsEquity = false;
 
 #include <Trade/SymbolInfo.mqh>
 #include <Trade/Trade.mqh>
@@ -29,7 +35,135 @@ CPositionInfo positionInfo;
 CHistoryOrderInfo historyOrderInfo;
 CDealInfo dealInfo;
 
-bool isBuyPositionOpen = false, isSellPositionOpen = false;
+class TradeValidator {
+   private:
+    // buy position variable
+    bool isLowerBroken;
+    bool isCrossedAboveLower;
+	bool isBuyTouchedMiddle;
+    bool isTouchedUpper;
+    // sell position variable
+    bool isUpperBroken;
+    bool isCrossedBelowUpper;
+	bool isSellTouchedMiddle;
+    bool isTouchedLower;
+	double balance;
+	double equity;
+	// 10%
+	double lotsOneTenth;
+	// 50%
+	double lotsOneHalf;
+
+   public:
+    TradeValidator();
+    ~TradeValidator() {};
+
+    void refresh();
+	bool loadAccountInfo();
+	void calculateLots(string symbol);
+
+	bool checkActiveBuyPosition();
+	bool checkActiveSellPosition();
+
+	// buy position method
+    void buyLowerBroken();
+    void buyCrossedAboveLower();
+    void buyTouchedMiddle();
+    void buyTouchedUpper();
+
+	// sell position method
+    void sellUpperBroken();
+    void sellCrossedBelowUpper();
+    void sellTouchedMiddle();
+    void sellTouchedLower();
+
+	// close all position
+    void closeAllBuyPosition();
+    void closeAllSellPosition();
+
+	double getAccountBalance() { return balance; }
+	double getAccountEquity() { return equity; }
+};
+
+TradeValidator::TradeValidator() {
+    isLowerBroken = false;
+    isCrossedAboveLower = false;
+	isBuyTouchedMiddle = false;
+    isTouchedUpper = false;
+    isUpperBroken = false;
+    isCrossedBelowUpper = false;
+	isSellTouchedMiddle = false;
+    isTouchedLower = false;
+	balance = 0.0;
+	equity = 0.0;
+	lotsOneTenth = 0.01;
+	lotsOneHalf = 0.05;
+}
+
+bool TradeValidator::loadAccountInfo() {
+	balance = AccountInfoDouble(ACCOUNT_BALANCE);
+	equity = AccountInfoDouble(ACCOUNT_EQUITY);
+	
+	return true;
+}
+
+void TradeValidator::calculateLots(string symbol) {
+	double contractSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_CONTRACT_SIZE);
+	double equityPerContract = equity / contractSize;
+	double balancePerContract = balance / contractSize;
+
+	if (trueIsBalanceFalseIsEquity) {
+		lotsOneHalf = balancePerContract / 0.5;
+		lotsOneTenth = balancePerContract / 0.1;
+	}
+	else {
+		lotsOneHalf = equityPerContract / 0.5;
+		lotsOneTenth = equityPerContract / 0.1;
+	}
+}
+
+// buy
+void TradeValidator::buyLowerBroken() {
+	isLowerBroken = true;
+}
+
+void TradeValidator::buyCrossedAboveLower() {
+	isCrossedAboveLower = true;
+}
+
+void TradeValidator::buyTouchedMiddle() {
+	isBuyTouchedMiddle = true;
+}
+
+void TradeValidator::buyTouchedUpper() {
+	isTouchedUpper = true;
+}
+
+// sell
+void TradeValidator::sellUpperBroken() {
+	isUpperBroken = true;
+}
+
+void TradeValidator::sellCrossedBelowUpper() {
+	isCrossedBelowUpper = true;
+}
+
+void TradeValidator::sellTouchedMiddle() {
+	isSellTouchedMiddle = true;
+}
+
+void TradeValidator::sellTouchedLower() {
+	isTouchedLower = true;
+}
+
+bool TradeValidator::checkActiveBuyPosition() {
+	return (isLowerBroken || isCrossedAboveLower || isBuyTouchedMiddle || isTouchedUpper);
+}
+
+bool TradeValidator::checkActiveSellPosition() {
+	return (isUpperBroken || isCrossedBelowUpper || isSellTouchedMiddle || isTouchedLower);
+}
+
 double upperBand[], middleBand[], lowerBand[];
 int handleBand;
 
@@ -57,43 +191,25 @@ void OnTick() {
     CopyBuffer(handleBand, LOWER_BAND, 0, 3, lowerBand);
     CopyBuffer(handleBand, UPPER_BAND, 0, 3, upperBand);
 
-	double currentUpperBand = upperBand[0];
-	double prevUpperBand = upperBand[1];
-	double currentMiddleBand = middleBand[0];
-	double prevMiddleBand = middleBand[1];
-	double currentLowerBand = lowerBand[0];
-	double prevLowerBand = lowerBand[1];
+    // bollinger bands values
+    double currentUpperBand = upperBand[CURRENT];
+    double currentMiddleBand = middleBand[CURRENT];
+    double currentLowerBand = lowerBand[CURRENT];
+    double prevUpperBand = upperBand[PREVIOUS];
+    double prevMiddleBand = middleBand[PREVIOUS];
+    double prevLowerBand = lowerBand[PREVIOUS];
 
-	double 
+    // current ask and bid price
+    double askPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+    double bidPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
 
-	bool trendBuySignal = getBuySignal();
-		bool trendSellSignal = getSellSignal();
-
-    /*
-	if (PositionSelect(_Symbol)) {
-        double profit = PositionGetDouble(POSITION_PROFIT);
-        bool positionType = PositionGetInteger(POSITION_TYPE);
-
-        if (profit > 0)
-            (positionType == POSITION_TYPE_BUY) ? isBuyPositionOpen = true
-                                                : isSellPositionOpen = true;
-    }
-	*/
+    // previous candle info
+    double prevClosePrice = iClose(_Symbol, ChartPeriod, PREVIOUS);
+    double prevOpenPrice = iOpen(_Symbol, ChartPeriod, PREVIOUS);
+    double prevHighPrice = iHigh(_Symbol, ChartPeriod, PREVIOUS);
+    double prevLowPrice = iLow(_Symbol, ChartPeriod, PREVIOUS);
 }
-
-bool getBuySignal() {
-	return true;
-}
-
-bool getSellSignal() {
-
-	return true;
-}
-
-
 
 void sellOrder() { return; }
-
-
 
 void buyOrder() { return; }
