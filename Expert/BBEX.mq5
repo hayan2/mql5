@@ -40,25 +40,8 @@ void OnTick() {
         CopyBuffer(bbHandle, 1, 0, 5, middleBand);  // 중단선
         CopyBuffer(bbHandle, 2, 0, 5, lowerBand);   // 하한선
     }
-    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
-    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
-    double contractSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_CONTRACT_SIZE);
-	
-    double equityPerContract = equity / contractSize;
-    double balancePerContract = balance / contractSize;
-
-	Print("contract size : ", contractSize);
-	Print("equity per : ", equityPerContract);
-	Print("balance per : ", balancePerContract);
-
-    double lotsOneHalf = equityPerContract * 0.5;
-    double lotsOneTenth = equityPerContract * 0.1;
-
-    // lotsOneHalf = equity / 0.5;
-    // lotsOneTenth = equity / 0.1;
-
-    Print("onehalf : ", lotsOneHalf);
-	Print("onetenth : ", lotsOneTenth);
+   
+	Print("_Point", _Point * 20);
 }
 
 //+------------------------------------------------------------------+

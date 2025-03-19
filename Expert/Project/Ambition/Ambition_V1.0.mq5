@@ -33,12 +33,20 @@ input bool HedgeMode = false;
 input double TakeProfitPercent = 0.05;
 input double MarginPercent = 0.1;
 input double trueIsBalanceFalseIsEquity = false;
-input int PointsGap = 0;
-input bool EnableSL = false;
 input double StopLoss = 200;
 input bool EnableTP = false;
 input double TakeProfit = 500;
 input int Slippage = 10;
+input group "---------- Order management ----------";
+input int PointsGap = 0;
+input int FirstSellPointsGap = 150;
+input int SecondSellPointsGap = 0;
+input int ThirdSellPointsGap = 0;
+input int FirstBuyPointsGap = 40;
+input int SecondBuyPointsGap = 0;
+input int ThirdBuyPointsGap = 0;
+input int TakeProfitGap = 20;
+input bool EnableSL = false;
 
 #include <Trade/SymbolInfo.mqh>
 #include <Trade/Trade.mqh>
@@ -66,11 +74,13 @@ class TradeValidator {
     void refresh();
     bool loadAccountInfo();
     double calculateLots();
+    double calculatePip(double point) { return point * _Point; }
 
     bool checkActiveBuyPosition();
     bool checkActiveSellPosition();
 
     bool executeTrade(ENUM_ORDER_TYPE type, double currentPrice, double volume);
+    bool closePositionHalf(ENUM_ORDER_TYPE type, int positionType);
 
     // close all position
     void closeAllBuyPosition();
@@ -80,6 +90,10 @@ class TradeValidator {
 
     double getAccountBalance() { return balance; }
     double getAccountEquity() { return equity; }
+    double getSpread() {
+        return SymbolInfoDouble(symbol, SYMBOL_ASK) -
+               SymbolInfoDouble(symbol, SYMBOL_BID);
+    }
     double getBid() { return SymbolInfoDouble(symbol, SYMBOL_BID); }
     double getAsk() { return SymbolInfoDouble(symbol, SYMBOL_ASK); }
 };
@@ -122,8 +136,6 @@ double TradeValidator::calculateLots() {
 
     lotsOneHalf = MathCeil(lotsOneHalf * 100) / 100;
     lotsOneTenth = MathCeil(lotsOneTenth * 100) / 100;
-
-    Print(lotsOneHalf);
 
     return lotsOneTenth;
 }
@@ -181,7 +193,68 @@ bool TradeValidator::executeTrade(ENUM_ORDER_TYPE type, double currentPrice,
         return false;
     }
 }
- 
+
+bool TradeValidator::closePositionHalf(ENUM_ORDER_TYPE type, int positionType) {
+    // POSITION_TYPE_BUY  == 0
+    // POSITION_TYPE_SELL == 1
+    MqlTradeRequest request = {};
+    MqlTradeResult result = {};
+
+	Print("opened positions : ", PositionsTotal());
+	for (int i = 0; i < PositionsTotal(); i++) {
+		ulong ticket = PositionGetTicket(i);
+
+		if (!ticket) continue;
+		
+		long ptype = PositionGetInteger(POSITION_TYPE);
+		
+		Print("ticket : ", ticket);
+		Print("type : ", ptype);
+	}
+	
+
+        /*
+		if (PositionSelect(PositionGetSymbol(POSITION_SYMBOL))) {
+            long currentPositionType = PositionGetInteger(POSITION_TYPE);
+            double positionVolume = PositionGetDouble(POSITION_VOLUME);
+            double closeVolume = positionVolume / 2;
+            Print("position volume : ", positionVolume);
+
+            if (currentPositionType == positionType) {
+				request.symbol = symbol;
+                request.action = TRADE_ACTION_CLOSE_BY;
+                request.symbol = PositionGetSymbol(POSITION_SYMBOL);
+                request.volume = closeVolume;
+                request.price = (positionType == POSITION_TYPE_BUY)
+                                    ? validator.getBid()
+                                    : validator.getAsk();
+				request.type = type;
+
+                if (OrderFilling == 0)
+                    request.type_filling = ORDER_FILLING_FOK;
+                else if (OrderFilling == 1)
+                    request.type_filling = ORDER_FILLING_IOC;
+                else if (OrderFilling == 2)
+                    request.type_filling = ORDER_FILLING_RETURN;
+
+                bool success = OrderSend(request, result);
+
+                if (success && result.retcode == TRADE_RETCODE_DONE) {
+                    Print("Trade successfully executed. Ticket : ",
+                          result.order);
+                    return true;
+                } else {
+                    Print("Trade error : ", result.retcode);
+                    Print("Description : ", result.comment);
+                    return false;
+                }
+            }
+        }
+		*/
+
+    return true;
+}
+
 CTrade trade;
 CSymbolInfo symbolInfo;
 CPositionInfo positionInfo;
@@ -241,55 +314,72 @@ void OnTick() {
     double prevLowPrice = iLow(_Symbol, ChartPeriod, PREVIOUS);
 
     // current ask and bid price and mean price values
+    double bidPrice = validator.getBid();
+    double askPrice = validator.getAsk();
     double currentPrice = (validator.getAsk() + validator.getBid()) / 2.0;
-    //---
-    // order buy and sell
+    //--- order buy and sell
+    //--- buy order section
     // first buy
-    if (currentPrice + PointsGap < currentLowerBand &&
+    if (prevClosePrice < prevLowerBand &&
+        currentPrice <
+            currentLowerBand - validator.calculatePip(FirstBuyPointsGap) &&
         validator.checkActiveBuyPosition()) {
         validator.executeTrade(ORDER_TYPE_BUY, currentPrice,
                                validator.lotsOneTenth);
-		validator.isLowerBroken = true;
+        validator.isLowerBroken = true;
     }
-
-    // first sell
-    if (currentPrice > currentUpperBand + PointsGap &&
-        validator.checkActiveSellPosition()) {
-        validator.executeTrade(ORDER_TYPE_SELL, currentPrice,
-                               validator.lotsOneTenth);
-		validator.isUpperBroken = true;
-    }
-
     // second buy
     if (validator.isLowerBroken && !validator.isCrossedAboveLower &&
         !validator.isBuyTouchedMiddle && !validator.isTouchedUpper &&
-        currentPrice + PointsGap > currentLowerBand) {
+        currentPrice > currentLowerBand) {
         validator.executeTrade(ORDER_TYPE_BUY, currentPrice,
                                validator.lotsOneHalf);
+        validator.isCrossedAboveLower = true;
     }
-
+    // thrid buy
+    if (validator.isLowerBroken && validator.isCrossedAboveLower &&
+        !validator.isBuyTouchedMiddle && !validator.isTouchedUpper &&
+        currentPrice >= currentMiddleBand) {
+        validator.executeTrade(ORDER_TYPE_BUY, currentPrice,
+                               validator.lotsOneHalf);
+        validator.isBuyTouchedMiddle = true;
+    }
+    //--- sell order section
+    // first sell
+    if ((prevClosePrice > prevUpperBand) &&
+        currentPrice >
+            currentUpperBand + validator.calculatePip(FirstSellPointsGap) &&
+        validator.checkActiveSellPosition()) {
+        validator.executeTrade(ORDER_TYPE_SELL, currentPrice,
+                               validator.lotsOneTenth);
+        validator.isUpperBroken = true;
+    }
     // second sell
     if (validator.isUpperBroken && !validator.isCrossedBelowUpper &&
         !validator.isSellTouchedMiddle && !validator.isTouchedLower &&
-        currentPrice < currentUpperBand + PointsGap) {
+        currentPrice < currentUpperBand) {
         validator.executeTrade(ORDER_TYPE_SELL, currentPrice,
                                validator.lotsOneHalf);
+        validator.isCrossedBelowUpper = true;
     }
-
-    // thrid buy
-    if (validator.isLowerBroken && validator.isCrossedAboveLower &&
-        !validator.isBuyTouchedMiddle && validator.isTouchedUpper &&
-        currentPrice + PointsGap == currentMiddleBand) {
-        validator.executeTrade(ORDER_TYPE_BUY, currentPrice,
-                               validator.lotsOneHalf);
-    }
-
     // thrid sell
     if (validator.isUpperBroken && validator.isCrossedBelowUpper &&
         !validator.isSellTouchedMiddle && !validator.isTouchedLower &&
-        currentPrice == currentMiddleBand + PointsGap) {
+        currentPrice <= currentMiddleBand) {
         validator.executeTrade(ORDER_TYPE_SELL, currentPrice,
                                validator.lotsOneHalf);
+        validator.isSellTouchedMiddle = true;
     }
     //---
+
+    //--- take profit and stop loss
+    // close buy 50%
+    if (validator.isLowerBroken && validator.isCrossedAboveLower &&
+        currentPrice + validator.calculatePip(TakeProfitGap) >=
+            currentLowerBand) {
+        // validator.closePositionHalf(ORDER_TYPE_CLOSE_BY, POSITION_TYPE_BUY);
+    }
+
+	validator.closePositionHalf(ORDER_TYPE_CLOSE_BY, POSITION_TYPE_BUY);
+    // close sell 50%
 }
