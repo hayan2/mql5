@@ -80,7 +80,8 @@ class TradeValidator {
     bool checkActiveSellPosition();
 
     bool executeTrade(ENUM_ORDER_TYPE type, double currentPrice, double volume);
-    bool closePositionHalf(ENUM_ORDER_TYPE type, int positionType);
+    bool closePositionHalf(ENUM_ORDER_TYPE type,
+                           ENUM_POSITION_TYPE positionType);
 
     // close all position
     void closeAllBuyPosition();
@@ -194,63 +195,75 @@ bool TradeValidator::executeTrade(ENUM_ORDER_TYPE type, double currentPrice,
     }
 }
 
-bool TradeValidator::closePositionHalf(ENUM_ORDER_TYPE type, int positionType) {
+bool TradeValidator::closePositionHalf(ENUM_ORDER_TYPE type,
+                                       ENUM_POSITION_TYPE positionType) {
     // POSITION_TYPE_BUY  == 0
     // POSITION_TYPE_SELL == 1
-    MqlTradeRequest request = {};
-    MqlTradeResult result = {};
+    /*
+MqlTradeRequest request = {};
+MqlTradeResult result = {};
 
-	Print("opened positions : ", PositionsTotal());
-	for (int i = 0; i < PositionsTotal(); i++) {
-		ulong ticket = PositionGetTicket(i);
+    Print("opened positions value : ", PositionsTotal());
+    for (int i = 0; i < PositionsTotal(); i++) {
+            ulong positionTicket = PositionGetTicket(i);
+            if (!PositionSelectByTicket(positionTicket)) return false;
 
-		if (!ticket) continue;
-		
-		long ptype = PositionGetInteger(POSITION_TYPE);
-		
-		Print("ticket : ", ticket);
-		Print("type : ", ptype);
-	}
-	
+            ENUM_POSITION_TYPE ptype =
+(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE); string positionSymbol =
+PositionGetString(POSITION_SYMBOL); ulong magic =
+PositionGetInteger(POSITION_MAGIC); double volume =
+PositionGetDouble(POSITION_VOLUME) / 2;
 
-        /*
-		if (PositionSelect(PositionGetSymbol(POSITION_SYMBOL))) {
-            long currentPositionType = PositionGetInteger(POSITION_TYPE);
-            double positionVolume = PositionGetDouble(POSITION_VOLUME);
-            double closeVolume = positionVolume / 2;
-            Print("position volume : ", positionVolume);
+            Print("ptype : ", ptype);
+            Print("position symbol : ", positionSymbol);
+            Print("magic : ", magic);
+            Print("volume : ", volume);
+            Print("position ticket : ", positionTicket);
+            Print("position type : ", positionType);
 
-            if (currentPositionType == positionType) {
-				request.symbol = symbol;
-                request.action = TRADE_ACTION_CLOSE_BY;
-                request.symbol = PositionGetSymbol(POSITION_SYMBOL);
-                request.volume = closeVolume;
-                request.price = (positionType == POSITION_TYPE_BUY)
-                                    ? validator.getBid()
-                                    : validator.getAsk();
-				request.type = type;
+            if (positionType == ptype) {
 
-                if (OrderFilling == 0)
-                    request.type_filling = ORDER_FILLING_FOK;
-                else if (OrderFilling == 1)
-                    request.type_filling = ORDER_FILLING_IOC;
-                else if (OrderFilling == 2)
-                    request.type_filling = ORDER_FILLING_RETURN;
+                    request.action = TRADE_ACTION_CLOSE_BY;
+                    request.position = positionTicket;
+                    request.position_by = PositionGetInteger(POSITION_TICKET);
+                    request.magic = MagicNumber;
 
-                bool success = OrderSend(request, result);
+                    if (OrderFilling == 0)
+                            request.type_filling = ORDER_FILLING_FOK;
+                    else if (OrderFilling == 1)
+                            request.type_filling = ORDER_FILLING_IOC;
+                    else if (OrderFilling == 2)
+                            request.type_filling = ORDER_FILLING_RETURN;
 
-                if (success && result.retcode == TRADE_RETCODE_DONE) {
-                    Print("Trade successfully executed. Ticket : ",
-                          result.order);
-                    return true;
-                } else {
-                    Print("Trade error : ", result.retcode);
-                    Print("Description : ", result.comment);
-                    return false;
+                    bool success = OrderSend(request, result);
+
+                    if (success && result.retcode == TRADE_RETCODE_DONE) {
+                            Print("Trade successfully executed. Ticket : ",
+result.order); return true; } else { Print("Trade error : ", result.retcode);
+                            Print("Description : ", result.comment);
+                            return false;
+                    }
+            }
+
+    }
+    */
+    Print("total : ", PositionsTotal());
+    for (int i = PositionsTotal(); i >= 0; i--) {
+        if (positionInfo.SelectByIndex(i)) {
+			ENUM_POSITION_TYPE ptype = positionInfo.PositionType();
+            if (ptype == positionType) {
+                double volume =
+                    MathCeil(positionInfo.Volume() / 2.0 * 100) / 100;
+                Print("info volume : ", positionInfo.Volume());
+                Print("volume : ", volume);
+                if (positionInfo.Symbol() == symbol &&
+                    positionInfo.Magic() == MagicNumber) {
+                    trade.PositionClosePartial(positionInfo.Ticket(), volume,
+                                               0);
                 }
             }
         }
-		*/
+    }
 
     return true;
 }
@@ -376,10 +389,11 @@ void OnTick() {
     // close buy 50%
     if (validator.isLowerBroken && validator.isCrossedAboveLower &&
         currentPrice + validator.calculatePip(TakeProfitGap) >=
-            currentLowerBand) {
-        // validator.closePositionHalf(ORDER_TYPE_CLOSE_BY, POSITION_TYPE_BUY);
+            currentMiddleBand) {
+        validator.closePositionHalf(ORDER_TYPE_CLOSE_BY, POSITION_TYPE_BUY);
+        validator.isLowerBroken = false;
+        validator.isCrossedAboveLower = false;
     }
 
-	validator.closePositionHalf(ORDER_TYPE_CLOSE_BY, POSITION_TYPE_BUY);
     // close sell 50%
 }
