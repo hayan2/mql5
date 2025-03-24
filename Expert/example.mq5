@@ -22,13 +22,6 @@ input int BB_Period = 20;
 input double BB_Deviation = 2.0;
 input double Lot_Size_Percentage = 10.0;
 
-// 증거금을 기준으로 로트 크기 계산
-double CalculateLotSize() {
-    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
-    double lotSize = (equity * (Lot_Size_Percentage / 100.0)) / 100000;
-    return NormalizeDouble(lotSize, 2);
-}
-
 // OnInit: 인디케이터 핸들 생성
 int OnInit() {
     bb_handle = iBands(Symbol(), PERIOD_CURRENT, BB_Period, 0, BB_Deviation, PRICE_CLOSE);
@@ -41,13 +34,12 @@ int OnInit() {
 
 // OnTick: 트레이딩 로직 실행
 void OnTick() {
-    double price = SymbolInfoDouble(Symbol(), SYMBOL_BID);
-    double lotSize = CalculateLotSize();
+    double price = SymbolInfoDouble(Symbol(), SYMBOL_BID) + SymbolInfoDouble(_Symbol, SYMBOL_ASK) / 2.0;
 
     // 볼린저 밴드 값 가져오기
-    if (CopyBuffer(bb_handle, 0, 0, 1, upperBand) <= 0 ||
-        CopyBuffer(bb_handle, 1, 0, 1, middleBand) <= 0 ||
-        CopyBuffer(bb_handle, 2, 0, 1, lowerBand) <= 0) {
+    if (CopyBuffer(bb_handle, 0, 0, 6, upperBand) <= 0 ||
+        CopyBuffer(bb_handle, 1, 0, 6, middleBand) <= 0 ||
+        CopyBuffer(bb_handle, 2, 0, 6, lowerBand) <= 0) {
         Print("❌ 볼린저 밴드 값 복사 실패!");
         return;
     }
@@ -56,33 +48,24 @@ void OnTick() {
     double middle = middleBand[0];
     double lower = lowerBand[0];
 
-    // 1. 하단 밴드 돌파 시 매수
-    if (price < lower) {
-        trade.Buy(lotSize);
-    }
+	double bbw = ((upper - lower) / middle) * 100;
 
-    // 2. 하단 밴드 위로 돌파 시 추가 매수
-    if (PositionSelect(Symbol()) && price > lower) {
-        trade.Buy(lotSize);
-    }
+	Print("bbw : ", bbw);
 
-    // 3. 중심선에서 50% 익절
-    if (PositionSelect(Symbol()) && price >= middle) {
-        trade.PositionClosePartial(PositionGetInteger(POSITION_TICKET), PositionGetDouble(POSITION_VOLUME) * 0.5);
-    }
+	double upperSlope = calculateSlope(upperBand, 5);
+	double middleSlope = calculateSlope(middleBand, 5);
+	double lowerSlope = calculateSlope(lowerBand, 5);
 
-    // 4. 중심선 돌파 시 추가 매수
-    if (price > middle) {
-        trade.Buy(lotSize);
-    }
+	Print("upper slope : ", upperSlope);
+	Print("middle slope : ", middleSlope);
+	Print("lower slope : ", lowerSlope);
 
-    // 5. 상단 밴드에서 50% 익절
-    if (PositionSelect(Symbol()) && price >= upper) {
-        trade.PositionClosePartial(PositionGetInteger(POSITION_TICKET), PositionGetDouble(POSITION_VOLUME) * 0.5);
-    }
+}
 
-    // 6. 상단 밴드 하향 돌파 시 매수
-    if (price < upper) {
-        trade.Buy(lotSize);
-    }
+double calculateSlope(double& band[], int period) {
+	if (period < 2) return 0;
+
+	double slope = (band[period - 1] - band[0]) / (period - 1);
+
+	return slope;
 }

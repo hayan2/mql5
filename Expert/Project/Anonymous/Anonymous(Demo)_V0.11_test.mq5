@@ -200,6 +200,7 @@ bool TradeValidator::executeTrade(ENUM_ORDER_TYPE type, double currentPrice,
     }
 }
 
+
 bool TradeValidator::closePositionHalf(ENUM_ORDER_TYPE type,
                                        ENUM_POSITION_TYPE positionType) {
 	// POSITION_TYPE_BUY  == 0
@@ -279,11 +280,7 @@ int handleBand;
 int OnInit() {
     handleBand = iBands(_Symbol, ChartPeriod, BandsPeriod, BandsShift,
                         Deviation, AppliedPrice);
-	
-	ArraySetAsSeries(middleBand, true);
-	ArraySetAsSeries(lowerBand, true);
-	ArraySetAsSeries(upperBand, true);
-	
+
     if (handleBand == INVALID_HANDLE) {
         Print("Failed to create Bollinger Bands");
         return INIT_FAILED;
@@ -300,13 +297,19 @@ void OnDeinit(const int reason) {}
 
 void OnTick() {
     // get bollinger bands middle, lower, upper line.
+	
+	ArraySetAsSeries(middleBand, true);
+	ArraySetAsSeries(lowerBand, true);
+	ArraySetAsSeries(upperBand, true);
 
-    if (CopyBuffer(handleBand, BASE_LINE, 0, 3, middleBand) < 3 ||
-        CopyBuffer(handleBand, LOWER_BAND, 0, 3, lowerBand) < 3 ||
-        CopyBuffer(handleBand, UPPER_BAND, 0, 3, upperBand) < 3) {
+	if (CopyBuffer(handleBand, BASE_LINE, 0, 6, middleBand) < 6 ||
+        CopyBuffer(handleBand, LOWER_BAND, 0, 6, lowerBand) < 6 ||
+        CopyBuffer(handleBand, UPPER_BAND, 0, 6, upperBand) < 6) {
         Print("Error copying indicator values : ", GetLastError());
         return;
     }
+
+
 
     validator.loadAccountInfo();
     if (validator.calculateLots() < MINIMUM_LOTS) {
@@ -429,6 +432,26 @@ void OnTick() {
             currentMiddleBand + validator.calculatePip(StopLossGap)) {
         validator.closeAllSellPosition();
     }
+
+	double bbw = ((currentUpperBand - currentLowerBand) / currentMiddleBand) * 100;
+
+	Print("bbw : ", bbw);
+
+	double upperSlope = calculateSlope(upperBand, 5);
+	double middleSlope = calculateSlope(middleBand, 5);
+	double lowerSlope = calculateSlope(lowerBand, 5);
+
+	Print("upper slope : ", upperSlope);
+	Print("middle slope : ", middleSlope);
+	Print("lower slope : ", lowerSlope);
+}
+
+double calculateSlope(double& band[], int period) {
+	if (period < 2) return 0;
+
+	double slope = (band[0] - band[period - 1]) / (period - 1);
+
+	return slope;
 }
 
 /*
