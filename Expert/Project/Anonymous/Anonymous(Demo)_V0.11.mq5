@@ -19,7 +19,7 @@ enum ENUM_ORDER_FILLING {
 };
 
 input group "---------- General ----------";
-input ulong MagicNumber = 2147483647;
+input ulong BoxMagicNumber = 2147483647;
 input ENUM_TIMEFRAMES ChartPeriod = PERIOD_H1;
 input ENUM_ORDER_FILLING OrderFilling = 1;
 input group "---------- Bollinger bands variable ----------";
@@ -185,7 +185,7 @@ bool TradeValidator::executeTrade(ENUM_ORDER_TYPE type, double currentPrice,
         request.tp = TakeProfit;
     }
     request.deviation = Slippage;
-    request.magic = MagicNumber;
+    request.magic = BoxMagicNumber;
     request.comment = "";
 
     bool success = OrderSend(request, result);
@@ -213,7 +213,7 @@ bool TradeValidator::closePositionHalf(ENUM_ORDER_TYPE type,
                 Print("info volume : ", positionInfo.Volume());
                 Print("volume : ", volume);
                 if (positionInfo.Symbol() == symbol &&
-                    positionInfo.Magic() == MagicNumber) {
+                    positionInfo.Magic() == BoxMagicNumber) {
                     trade.PositionClosePartial(positionInfo.Ticket(), volume,
                                                0);
                 }
@@ -233,7 +233,7 @@ void TradeValidator::closeAllBuyPosition() {
                 Print("info volume : ", positionInfo.Volume());
                 Print("volume : ", volume);
                 if (positionInfo.Symbol() == symbol &&
-                    positionInfo.Magic() == MagicNumber) {
+                    positionInfo.Magic() == BoxMagicNumber) {
                     trade.PositionClosePartial(positionInfo.Ticket(), volume,
                                                0);
                 }
@@ -254,7 +254,7 @@ void TradeValidator::closeAllSellPosition() {
                 Print("info volume : ", positionInfo.Volume());
                 Print("volume : ", volume);
                 if (positionInfo.Symbol() == symbol &&
-                    positionInfo.Magic() == MagicNumber) {
+                    positionInfo.Magic() == BoxMagicNumber) {
                     trade.PositionClosePartial(positionInfo.Ticket(), volume,
                                                0);
                 }
@@ -291,7 +291,7 @@ int OnInit() {
 
     //---
     if (HedgeMode) trade.SetMarginMode();
-    trade.SetExpertMagicNumber(MagicNumber);
+    trade.SetExpertMagicNumber(BoxMagicNumber);
 
     return (INIT_SUCCEEDED);
 }
