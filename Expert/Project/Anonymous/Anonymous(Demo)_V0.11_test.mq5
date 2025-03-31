@@ -305,15 +305,16 @@ void TradeValidator::getCurrentBollingerBandsSlope(double& lowerBand[],
 	slope.absMiddle = MathAbs(slope.middle);
 	slope.absUpper = MathAbs(slope.upper);
 }
+//
 
 void TradeValidator::getCurrentBollingerBandwidth(double currentLowerBand,
                                                   double currentMiddleBand,
                                                   double currentUpperBand) {
     bbw = ((currentUpperBand - currentLowerBand) / currentMiddleBand) * 10000;
 }
-
+ 
 bool TradeValidator::getBoxTradingBuySignal() {
-	return 
+	return true;
 }
 
 bool TradeValidator::getBoxTradingSellSignal() {
