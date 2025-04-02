@@ -32,8 +32,18 @@ input int SlopePeriod = 3;
 input group "---------- Relative Strength Index variable ----------";
 input int RsiPeriod = 14;
 input group "---------- Pattern variable ----------";
-input double BoxPatternSlope = 3.7;
-input double BoxPatternBBW = 50;
+input double BoxPatternAbsSlope = 3.7;
+input double BoxPatternBBW = 50.0;
+
+input double TrendPatternBuyUpperSlope = 0.0;
+input double TrendPatternBuyMiddleSlope = 0.0;
+input double TrendPatternBuyLowerSlope = 0.0;
+
+input double TrendPatternSellUpperSlope = 0.0;
+input double TrendPatternSellMiddleSlope = 0.0;
+input double TrendPatternSellLowerSlope = 0.0;
+
+input double TrendPatternBBW = 100.0;
 input group "---------- Risk and money management ----------";
 input double Lots = 0.01;
 input bool HedgeMode = false;
@@ -76,6 +86,9 @@ class TradeValidator {
     bool isUpperBroken, isCrossedBelowUpper, isSellTouchedMiddle,
         isTouchedLower;
     bool isSellCloseMiddle;
+    // box or trend trading variable
+    bool boxPositionOpenBuy, boxPositionOpenSell, trendPositionOpenBuy,
+        trendPositionOpenSell;
     //---
     double balance, equity;
     // 10%
@@ -94,7 +107,8 @@ class TradeValidator {
     bool checkActiveBuyPosition();
     bool checkActiveSellPosition();
 
-    bool executeTrade(ENUM_ORDER_TYPE type, double currentPrice, double volume, ulong magic);
+    bool executeTrade(ENUM_ORDER_TYPE type, double currentPrice, double volume,
+                      ulong magic);
     bool closePositionHalf(ENUM_ORDER_TYPE type,
                            ENUM_POSITION_TYPE positionType);
 
@@ -116,10 +130,10 @@ class TradeValidator {
     void getCurrentBollingerBandwidth(double currentLowerBand,
                                       double currentMiddleBand,
                                       double currentUpperBand);
-	bool getBoxTradingBuySignal();
-	bool getBoxTradingSellSignal();
-	bool getTrendTradingBuySignal();
-	bool getTrendTradingSellSignal();
+    bool getBoxTradingBuySignal();
+    bool getBoxTradingSellSignal();
+    bool getTrendTradingBuySignal();
+    bool getTrendTradingSellSignal();
 
     void displayBBW() { Print("BBW : ", bbw); }
     void displaySlope() {
@@ -218,6 +232,9 @@ bool TradeValidator::executeTrade(ENUM_ORDER_TYPE type, double currentPrice,
     request.magic = BoxMagicNumber;
     request.comment = "";
 
+    displayBBW();
+    displaySlope();
+
     bool success = OrderSend(request, result);
 
     if (success && result.retcode == TRADE_RETCODE_DONE) {
@@ -297,36 +314,38 @@ void TradeValidator::getCurrentBollingerBandsSlope(double& lowerBand[],
                                                    double& middleBand[],
                                                    double& upperBand[],
                                                    int period) {
-    slope.lower = ((lowerBand[0] - lowerBand[period - 1]) / (period - 1)) * 10000;
-    slope.middle = ((middleBand[0] - middleBand[period - 1]) / (period - 1)) * 10000;
-    slope.upper = ((upperBand[0] - upperBand[period - 1]) / (period - 1)) * 10000;
+    slope.lower =
+        ((lowerBand[0] - lowerBand[period - 1]) / (period - 1)) * 10000;
+    slope.middle =
+        ((middleBand[0] - middleBand[period - 1]) / (period - 1)) * 10000;
+    slope.upper =
+        ((upperBand[0] - upperBand[period - 1]) / (period - 1)) * 10000;
 
-	slope.absLower = MathAbs(slope.lower);
-	slope.absMiddle = MathAbs(slope.middle);
-	slope.absUpper = MathAbs(slope.upper);
+    slope.absLower = MathAbs(slope.lower);
+    slope.absMiddle = MathAbs(slope.middle);
+    slope.absUpper = MathAbs(slope.upper);
 }
-//
 
 void TradeValidator::getCurrentBollingerBandwidth(double currentLowerBand,
                                                   double currentMiddleBand,
                                                   double currentUpperBand) {
     bbw = ((currentUpperBand - currentLowerBand) / currentMiddleBand) * 10000;
 }
- 
-bool TradeValidator::getBoxTradingBuySignal() {
-	return true;
-}
+
+bool TradeValidator::getBoxTradingBuySignal() { return true; }
 
 bool TradeValidator::getBoxTradingSellSignal() {
-	return true;
+    return true;
 }
 
-bool TradeValidator::getTrendTradingBuySignal() {
-	return true;
-}
+bool TradeValidator::getTrendTradingBuySignal() { return true; }
 
 bool TradeValidator::getTrendTradingSellSignal() {
-	return true;
+	// ex) upper slope < 4 | middle slope < -4 | lower slope < -12 | bbw < 100 ?
+	return ((slope.lower < TrendPatternSellLowerSlope) &&
+            (slope.middle < TrendPatternSellMiddleSlope) &&
+            (slope.upper < TrendPatternSellUpperSlope) &&
+            (bbw > TrendPatternBBW));
 }
 
 CTrade trade;
@@ -341,17 +360,17 @@ int handleBand, handleRsi;
 int OnInit() {
     handleBand = iBands(_Symbol, ChartPeriod, BandsPeriod, BandsShift,
                         Deviation, AppliedPrice);
-	handleRsi = iRSI(_Symbol, ChartPeriod, RsiPeriod, AppliedPrice);
+    handleRsi = iRSI(_Symbol, ChartPeriod, RsiPeriod, AppliedPrice);
 
     if (handleBand == INVALID_HANDLE) {
         Print("Failed to create Bollinger Bands");
         return INIT_FAILED;
     }
 
-	if (handleRsi == INVALID_HANDLE) {
-		Print("Failed to create RSI");
-		return INIT_FAILED;
-	}
+    if (handleRsi == INVALID_HANDLE) {
+        Print("Failed to create RSI");
+        return INIT_FAILED;
+    }
 
     //---
     if (HedgeMode) trade.SetMarginMode();
@@ -364,18 +383,18 @@ void OnDeinit(const int reason) {}
 
 void OnTick() {
     // get bollinger bands middle, lower, upper line.
-	double upperBand[], middleBand[], lowerBand[];
-	double rsi[];
+    double upperBand[], middleBand[], lowerBand[];
+    double rsi[];
 
     ArraySetAsSeries(middleBand, true);
     ArraySetAsSeries(lowerBand, true);
     ArraySetAsSeries(upperBand, true);
-	ArraySetAsSeries(rsi, true);
+    ArraySetAsSeries(rsi, true);
 
-    if (CopyBuffer(handleBand, BASE_LINE, 0, 4, middleBand) < 4 ||
-        CopyBuffer(handleBand, LOWER_BAND, 0, 4, lowerBand) < 4 ||
-        CopyBuffer(handleBand, UPPER_BAND, 0, 4, upperBand) < 4 ||
-		CopyBuffer(handleRsi, 0, 0, 5, rsi) < 0) {
+    if (CopyBuffer(handleBand, BASE_LINE, 0, 5, middleBand) < 5 ||
+        CopyBuffer(handleBand, LOWER_BAND, 0, 5, lowerBand) < 5 ||
+        CopyBuffer(handleBand, UPPER_BAND, 0, 5, upperBand) < 5 ||
+        CopyBuffer(handleRsi, 0, 0, 5, rsi) < 0) {
         Print("Error copying indicator values : ", GetLastError());
         return;
     }
@@ -394,9 +413,9 @@ void OnTick() {
     double prevMiddleBand = middleBand[PREVIOUS];
     double prevLowerBand = lowerBand[PREVIOUS];
 
-	// rsi values
-	double currentRsi = rsi[CURRENT];
-	double prevRsi = rsi[PREVIOUS];
+    // rsi values
+    double currentRsi = rsi[CURRENT];
+    double prevRsi = rsi[PREVIOUS];
 
     // previous candle info
     double prevClosePrice = iClose(_Symbol, ChartPeriod, PREVIOUS);
@@ -415,7 +434,7 @@ void OnTick() {
                                            currentUpperBand);
 
     bool boxTradingBuySignal = validator.getBoxTradingBuySignal();
-	bool boxTradingSellSignal = validator.getBoxTradingSellSignal();
+    bool boxTradingSellSignal = validator.getBoxTradingSellSignal();
     bool trendTradingBuySignal = validator.getTrendTradingBuySignal();
     bool trendTradingSellSignal = validator.getTrendTradingSellSignal();
 
@@ -513,6 +532,9 @@ void OnTick() {
             currentMiddleBand + validator.calculatePip(StopLossGap)) {
         validator.closeAllSellPosition();
     }
+
+	validator.displayBBW();
+	validator.displaySlope();
 }
 
 /*
