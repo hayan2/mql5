@@ -19,7 +19,7 @@ enum ENUM_ORDER_FILLING {
 };
 
 input group "---------- General ----------";
-input ulong BoxMagicNumber = 2147483647;
+input ulong RangeBuyMagicNumber = 2147483647;
 input ENUM_TIMEFRAMES ChartPeriod = PERIOD_H1;
 input ENUM_ORDER_FILLING OrderFilling = 1;
 input group "---------- Bollinger bands variable ----------";
@@ -57,12 +57,12 @@ class TradeValidator {
     string symbol;
     //---
     // buy position variable
-    bool isLowerBroken, isCrossedAboveLower, isBuyTouchedMiddle, isTouchedUpper;
-    bool isBuyCloseMiddle;
+    bool hasLowerBroken, hasCrossedAboveLower, hasBuyTouchedMiddle, hasTouchedUpper;
+    bool hasBuyCloseMiddle;
     // sell position variable
-    bool isUpperBroken, isCrossedBelowUpper, isSellTouchedMiddle,
-        isTouchedLower;
-    bool isSellCloseMiddle;
+    bool hasUpperBroken, hasCrossedBelowUpper, hasSellTouchedMiddle,
+        hasTouchedLower;
+    bool hasSellCloseMiddle;
     //---
     double balance;
     double equity;
@@ -77,7 +77,7 @@ class TradeValidator {
     void refresh();
     bool loadAccountInfo();
     double calculateLots();
-    double calculatePip(double point) { return point * _Point; }
+    double calculatePips(double point) { return point * _Point; }
 
     bool checkActiveBuyPosition();
     bool checkActiveSellPosition();
@@ -104,16 +104,16 @@ class TradeValidator {
 
 TradeValidator::TradeValidator() {
     symbol = _Symbol;
-    isLowerBroken = false;
-    isCrossedAboveLower = false;
-    isBuyTouchedMiddle = false;
-    isTouchedUpper = false;
-    isUpperBroken = false;
-    isCrossedBelowUpper = false;
-    isSellTouchedMiddle = false;
-    isTouchedLower = false;
-    isBuyCloseMiddle = false;
-    isSellCloseMiddle = false;
+    hasLowerBroken = false;
+    hasCrossedAboveLower = false;
+    hasBuyTouchedMiddle = false;
+    hasTouchedUpper = false;
+    hasUpperBroken = false;
+    hasCrossedBelowUpper = false;
+    hasSellTouchedMiddle = false;
+    hasTouchedLower = false;
+    hasBuyCloseMiddle = false;
+    hasSellCloseMiddle = false;
     balance = 0.0;
     equity = 0.0;
     lotsOneTenth = 0.01;
@@ -148,14 +148,14 @@ double TradeValidator::calculateLots() {
 
 // returns true if there are no open buy position
 bool TradeValidator::checkActiveBuyPosition() {
-    return !(isLowerBroken || isCrossedAboveLower || isBuyTouchedMiddle ||
-             isTouchedUpper);
+    return !(hasLowerBroken || hasCrossedAboveLower || hasBuyTouchedMiddle ||
+             hasTouchedUpper);
 }
 
 // returns true if there are no open sell position
 bool TradeValidator::checkActiveSellPosition() {
-    return !(isUpperBroken || isCrossedBelowUpper || isSellTouchedMiddle ||
-             isTouchedLower);
+    return !(hasUpperBroken || hasCrossedBelowUpper || hasSellTouchedMiddle ||
+             hasTouchedLower);
 }
 
 bool TradeValidator::executeTrade(ENUM_ORDER_TYPE type, double currentPrice,
@@ -185,7 +185,7 @@ bool TradeValidator::executeTrade(ENUM_ORDER_TYPE type, double currentPrice,
         request.tp = TakeProfit;
     }
     request.deviation = Slippage;
-    request.magic = BoxMagicNumber;
+    request.magic = RangeBuyMagicNumber;
     request.comment = "";
 
     bool success = OrderSend(request, result);
@@ -213,7 +213,7 @@ bool TradeValidator::closePositionHalf(ENUM_ORDER_TYPE type,
                 Print("info volume : ", positionInfo.Volume());
                 Print("volume : ", volume);
                 if (positionInfo.Symbol() == symbol &&
-                    positionInfo.Magic() == BoxMagicNumber) {
+                    positionInfo.Magic() == RangeBuyMagicNumber) {
                     trade.PositionClosePartial(positionInfo.Ticket(), volume,
                                                0);
                 }
@@ -233,7 +233,7 @@ void TradeValidator::closeAllBuyPosition() {
                 Print("info volume : ", positionInfo.Volume());
                 Print("volume : ", volume);
                 if (positionInfo.Symbol() == symbol &&
-                    positionInfo.Magic() == BoxMagicNumber) {
+                    positionInfo.Magic() == RangeBuyMagicNumber) {
                     trade.PositionClosePartial(positionInfo.Ticket(), volume,
                                                0);
                 }
@@ -241,8 +241,8 @@ void TradeValidator::closeAllBuyPosition() {
         }
     }
 
-    isLowerBroken = isCrossedAboveLower = isBuyTouchedMiddle = isTouchedUpper =
-        isBuyCloseMiddle = false;
+    hasLowerBroken = hasCrossedAboveLower = hasBuyTouchedMiddle = hasTouchedUpper =
+        hasBuyCloseMiddle = false;
 }
 
 void TradeValidator::closeAllSellPosition() {
@@ -254,15 +254,15 @@ void TradeValidator::closeAllSellPosition() {
                 Print("info volume : ", positionInfo.Volume());
                 Print("volume : ", volume);
                 if (positionInfo.Symbol() == symbol &&
-                    positionInfo.Magic() == BoxMagicNumber) {
+                    positionInfo.Magic() == RangeBuyMagicNumber) {
                     trade.PositionClosePartial(positionInfo.Ticket(), volume,
                                                0);
                 }
             }
         }
     }
-    isUpperBroken = isCrossedBelowUpper = isSellTouchedMiddle = isTouchedLower =
-        isSellCloseMiddle = false;
+    hasUpperBroken = hasCrossedBelowUpper = hasSellTouchedMiddle = hasTouchedLower =
+        hasSellCloseMiddle = false;
 }
 
 CTrade trade;
@@ -291,7 +291,7 @@ int OnInit() {
 
     //---
     if (HedgeMode) trade.SetMarginMode();
-    trade.SetExpertMagicNumber(BoxMagicNumber);
+    trade.SetExpertMagicNumber(RangeBuyMagicNumber);
 
     return (INIT_SUCCEEDED);
 }
@@ -336,97 +336,97 @@ void OnTick() {
     //--- order buy and sell
     //--- buy order section
     // first buy
-    if (!validator.isBuyCloseMiddle && prevClosePrice < prevLowerBand &&
+    if (!validator.hasBuyCloseMiddle && prevClosePrice < prevLowerBand &&
         currentPrice <
-            currentLowerBand - validator.calculatePip(FirstBuyPointsGap) &&
+            currentLowerBand - validator.calculatePips(FirstBuyPointsGap) &&
         validator.checkActiveBuyPosition()) {
         validator.executeTrade(ORDER_TYPE_BUY, currentPrice,
                                validator.lotsOneTenth);
-        validator.isLowerBroken = true;
+        validator.hasLowerBroken = true;
     }
     // second buy
-    if (!validator.isBuyCloseMiddle && validator.isLowerBroken &&
-        !validator.isCrossedAboveLower && !validator.isBuyTouchedMiddle &&
-        !validator.isTouchedUpper && currentPrice > currentLowerBand) {
+    if (!validator.hasBuyCloseMiddle && validator.hasLowerBroken &&
+        !validator.hasCrossedAboveLower && !validator.hasBuyTouchedMiddle &&
+        !validator.hasTouchedUpper && currentPrice > currentLowerBand) {
         validator.executeTrade(ORDER_TYPE_BUY, currentPrice,
                                validator.lotsOneHalf);
-        validator.isCrossedAboveLower = true;
+        validator.hasCrossedAboveLower = true;
     }
     // thrid buy
-    if (validator.isBuyCloseMiddle && !validator.isBuyTouchedMiddle &&
-        !validator.isTouchedUpper && currentPrice >= currentMiddleBand) {
+    if (validator.hasBuyCloseMiddle && !validator.hasBuyTouchedMiddle &&
+        !validator.hasTouchedUpper && currentPrice >= currentMiddleBand) {
         validator.executeTrade(ORDER_TYPE_BUY, currentPrice,
                                validator.lotsOneHalf);
-        validator.isBuyTouchedMiddle = true;
+        validator.hasBuyTouchedMiddle = true;
     }
     //--- sell order section
     // first sell
-    if (!validator.isSellCloseMiddle && prevClosePrice > prevUpperBand &&
+    if (!validator.hasSellCloseMiddle && prevClosePrice > prevUpperBand &&
         currentPrice >
-            currentUpperBand + validator.calculatePip(FirstSellPointsGap) &&
+            currentUpperBand + validator.calculatePips(FirstSellPointsGap) &&
         validator.checkActiveSellPosition()) {
         validator.executeTrade(ORDER_TYPE_SELL, currentPrice,
                                validator.lotsOneTenth);
-        validator.isUpperBroken = true;
+        validator.hasUpperBroken = true;
     }
     // second sell
-    if (!validator.isSellCloseMiddle && validator.isUpperBroken &&
-        !validator.isCrossedBelowUpper && !validator.isSellTouchedMiddle &&
-        !validator.isTouchedLower && currentPrice < currentUpperBand) {
+    if (!validator.hasSellCloseMiddle && validator.hasUpperBroken &&
+        !validator.hasCrossedBelowUpper && !validator.hasSellTouchedMiddle &&
+        !validator.hasTouchedLower && currentPrice < currentUpperBand) {
         validator.executeTrade(ORDER_TYPE_SELL, currentPrice,
                                validator.lotsOneHalf);
-        validator.isCrossedBelowUpper = true;
+        validator.hasCrossedBelowUpper = true;
     }
     // thrid sell
-    if (validator.isUpperBroken && validator.isCrossedBelowUpper &&
-        !validator.isSellTouchedMiddle && !validator.isTouchedLower &&
+    if (validator.hasUpperBroken && validator.hasCrossedBelowUpper &&
+        !validator.hasSellTouchedMiddle && !validator.hasTouchedLower &&
         currentPrice <= currentMiddleBand) {
         validator.executeTrade(ORDER_TYPE_SELL, currentPrice,
                                validator.lotsOneHalf);
-        validator.isSellTouchedMiddle = true;
+        validator.hasSellTouchedMiddle = true;
     }
     //---
 
     //--- take profit and stop loss
     // close buy 50%
-    if (validator.isLowerBroken && validator.isCrossedAboveLower &&
-        currentPrice + validator.calculatePip(TakeProfitGap) >=
+    if (validator.hasLowerBroken && validator.hasCrossedAboveLower &&
+        currentPrice + validator.calculatePips(TakeProfitGap) >=
             currentMiddleBand) {
         validator.closePositionHalf(ORDER_TYPE_CLOSE_BY, POSITION_TYPE_BUY);
-        validator.isLowerBroken = false;
-        validator.isCrossedAboveLower = false;
-        validator.isBuyCloseMiddle = true;
+        validator.hasLowerBroken = false;
+        validator.hasCrossedAboveLower = false;
+        validator.hasBuyCloseMiddle = true;
     }
     // close all buy positions
-    if (validator.isBuyTouchedMiddle && validator.isBuyCloseMiddle &&
+    if (validator.hasBuyTouchedMiddle && validator.hasBuyCloseMiddle &&
         prevClosePrice > prevUpperBand && currentPrice < currentUpperBand) {
         validator.closeAllBuyPosition();
     }
     // buy positions all close -> touched middle and cross below middle line ?
-    if (validator.isBuyCloseMiddle && prevClosePrice > prevMiddleBand &&
+    if (validator.hasBuyCloseMiddle && prevClosePrice > prevMiddleBand &&
         currentPrice <
-            currentMiddleBand - validator.calculatePip(StopLossGap)) {
+            currentMiddleBand - validator.calculatePips(StopLossGap)) {
         validator.closeAllBuyPosition();
     }
 
     // close sell 50%
-    if (validator.isUpperBroken && validator.isCrossedBelowUpper &&
+    if (validator.hasUpperBroken && validator.hasCrossedBelowUpper &&
         currentPrice <=
-            currentMiddleBand + validator.calculatePip(TakeProfitGap)) {
+            currentMiddleBand + validator.calculatePips(TakeProfitGap)) {
         validator.closePositionHalf(ORDER_TYPE_CLOSE_BY, POSITION_TYPE_SELL);
-        validator.isUpperBroken = false;
-        validator.isCrossedBelowUpper = false;
-        validator.isSellCloseMiddle = true;
+        validator.hasUpperBroken = false;
+        validator.hasCrossedBelowUpper = false;
+        validator.hasSellCloseMiddle = true;
     }
     // close all sell positions
-    if (validator.isSellTouchedMiddle && validator.isSellCloseMiddle &&
+    if (validator.hasSellTouchedMiddle && validator.hasSellCloseMiddle &&
         prevClosePrice < prevLowerBand && currentPrice > currentLowerBand) {
         validator.closeAllSellPosition();
     }
     // sell positions all close -> touched middle and cross above middle line ?
-    if (validator.isSellCloseMiddle && prevClosePrice < prevMiddleBand &&
+    if (validator.hasSellCloseMiddle && prevClosePrice < prevMiddleBand &&
         currentPrice >
-            currentMiddleBand + validator.calculatePip(StopLossGap)) {
+            currentMiddleBand + validator.calculatePips(StopLossGap)) {
         validator.closeAllSellPosition();
     }
 }
