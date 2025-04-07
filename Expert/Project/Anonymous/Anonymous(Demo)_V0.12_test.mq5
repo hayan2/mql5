@@ -445,7 +445,7 @@ bool TradeValidator::getTrendTradingSellSignal() {
             slope.lower < 0 &&
             (bbw / slope.lower) > TrendPatternSellLowerValue);
 }
-
+// 
 CTrade trade;
 CSymbolInfo symbolInfo;
 CPositionInfo positionInfo;
