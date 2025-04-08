@@ -95,7 +95,7 @@ class TradeValidator {
     // range or trend trading variable
     bool hasOpenRangeBuyPositions, hasOpenRangeSellPositions,
         hasOpenTrendBuyPositions, hasOpenTrendSellPositions;
-	bool hasTradeBuyThisSection, hasTradeSellThisSection;
+    bool hasTradeBuyThisSection, hasTradeSellThisSection;
     //---
     double balance, equity;
     // 10%
@@ -445,7 +445,7 @@ bool TradeValidator::getTrendTradingSellSignal() {
             slope.lower < 0 &&
             (bbw / slope.lower) > TrendPatternSellLowerValue);
 }
-// 
+//
 CTrade trade;
 CSymbolInfo symbolInfo;
 CPositionInfo positionInfo;
@@ -553,7 +553,6 @@ void OnTick() {
     bool trendTradingBuySignal = validator.getTrendTradingBuySignal();
     bool trendTradingSellSignal = validator.getTrendTradingSellSignal();
 
-    
     bool flagTrendBuy = false;
     bool flagTrendSell = false;
     // check if trend positions are already open for this symbol
@@ -572,31 +571,36 @@ void OnTick() {
     }
     validator.hasOpenTrendBuyPositions = flagTrendBuy;
     validator.hasOpenTrendSellPositions = flagTrendSell;
-	
-	validator.hasTradeBuyThisSection = trendTradingSellSignal ? false : validator.hasTradeBuyThisSection;
-	validator.hasTradeSellThisSection = trendTradingBuySignal ? false : validator.hasTradeSellThisSection;
+
+    validator.hasTradeBuyThisSection =
+        trendTradingSellSignal ? false : validator.hasTradeBuyThisSection;
+    validator.hasTradeSellThisSection =
+        trendTradingBuySignal ? false : validator.hasTradeSellThisSection;
 
     //--- trend trading section
-    if (!validator.hasOpenRangeBuyPositions && !validator.hasOpenRangeSellPositions) {
-		//--- trend buy
+    if (!validator.hasOpenRangeBuyPositions &&
+        !validator.hasOpenRangeSellPositions) {
+        //--- trend buy
         if (currentSlowMa < currentFastMa && trendTradingBuySignal &&
             !validator.hasOpenTrendBuyPositions &&
-            !validator.hasOpenTrendSellPositions && !validator.hasTradeBuyThisSection) {
+            !validator.hasOpenTrendSellPositions &&
+            !validator.hasTradeBuyThisSection) {
             validator.executeTrendTrade(ORDER_TYPE_BUY, validator.getBid(),
                                         validator.lotsOneHalf,
                                         TrendBuyMagicNumber);
             validator.hasOpenTrendBuyPositions = true;
-			validator.hasTradeBuyThisSection = true;
+            validator.hasTradeBuyThisSection = true;
         }
         //--- trend sell
         if (currentSlowMa > currentFastMa && trendTradingSellSignal &&
             !validator.hasOpenTrendSellPositions &&
-            !validator.hasOpenTrendBuyPositions && !validator.hasTradeSellThisSection) {
+            !validator.hasOpenTrendBuyPositions &&
+            !validator.hasTradeSellThisSection) {
             validator.executeTrendTrade(ORDER_TYPE_SELL, validator.getAsk(),
                                         validator.lotsOneHalf,
                                         TrendSellMagicNumber);
             validator.hasOpenTrendSellPositions = true;
-			validator.hasTradeSellThisSection = true;
+            validator.hasTradeSellThisSection = true;
         }
     }
 
@@ -682,8 +686,8 @@ void OnTick() {
                 currentMiddleBand - validator.calculatePips(StopLossGap)) {
             validator.closeAllBuyPosition();
         }
-        
-		//--- sell order section
+
+        //--- sell order section
         if (!validator.hasOpenRangeBuyPositions && rangeTradingSignal) {
             // first sell
             if (prevClosePrice > prevUpperBand &&
@@ -740,7 +744,6 @@ void OnTick() {
                 currentMiddleBand + validator.calculatePips(StopLossGap)) {
             validator.closeAllSellPosition();
         }
-		
     }
 }
 
