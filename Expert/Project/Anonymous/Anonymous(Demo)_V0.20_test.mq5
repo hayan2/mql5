@@ -278,7 +278,7 @@ void OnTick() {
             COUNT_BANDS ||
         CopyBuffer(handleBand, LOWER_BAND, 0, COUNT_BANDS, lowerBand) <
             COUNT_BANDS ||
-        CopyBuffer(handleBand, UPPER_BAND, 0, COUNT_BANDS, upperBand) < 
+        CopyBuffer(handleBand, UPPER_BAND, 0, COUNT_BANDS, upperBand) <
             COUNT_BANDS ||
         CopyBuffer(handleRsi, 0, 0, COUNT_RSI, rsi) < COUNT_RSI) {
         Print("Error copying indicators values : ", GetLastError());
