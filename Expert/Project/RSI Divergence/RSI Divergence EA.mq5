@@ -72,12 +72,12 @@ void OnTick() {
 		}
 	}
 
-    if (tradeSignal[0] == DIVERGENCE_BUY_SIGNAL && !hasOpenSellPositions) {
-        trade.Buy(0.05, _Symbol, bid, 0.0, bid + 800 * _Point,
+    if (tradeSignal[0] == DIVERGENCE_BUY_SIGNAL) {
+        trade.Buy(0.05, _Symbol, bid, 0.0, bid + 3000 * _Point,
                   "");
     }
-	if (tradeSignal[0] == DIVERGENCE_SELL_SIGNAL && !hasOpenBuyPositions) {
-        trade.Sell(0.05, _Symbol, ask, 0.0, ask - 800 * _Point,
+	if (tradeSignal[0] == DIVERGENCE_SELL_SIGNAL) {
+        trade.Sell(0.05, _Symbol, ask, 0.0, ask - 3000 * _Point,
                    "");
     }
 }
