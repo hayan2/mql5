@@ -45,8 +45,8 @@ class TradeValidator {
     double equity;
     string symbol;
     double lots;
-    double minLots;
-    double maxLots;
+    double minLotSize;
+    double maxLotSize;
     double point;
     double digits;
     
@@ -97,12 +97,12 @@ bool TradeValidator::loadSymbolInfo() {
     point = SymbolInfoDouble(symbol, SYMBOL_POINT);
 
     // trading properties
-    minLots = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
-    maxLots = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
+    minLotSize = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+    maxLotSize = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
 
     // Protection against invalid data
-    if (minLots <= 0) minLots = 0.01;
-    if (maxLots <= 0) maxLots = 100.0;
+    if (minLotSize <= 0) minLotSize = 0.01;
+    if (maxLotSize <= 0) maxLotSize = 100.0;
 
     return true;
 }
@@ -127,7 +127,7 @@ bool TradeValidator::checkHistory(int minimumBars) {
 bool TradeValidator::calculateLots() {
     double contractSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_CONTRACT_SIZE);
     lots = MathCeil(balance / contractSize * (TradeMarginPercent / 100) * 100) / 100 - 0.01;	
-    if (lots < minLots) return false;
+    if (lots < minLotSize) return false;
     return true;
 }
 

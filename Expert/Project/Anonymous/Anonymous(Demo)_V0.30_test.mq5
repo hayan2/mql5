@@ -6,12 +6,24 @@
 #property link "https://github.com/hayan2"
 #property version "1.00"
 
+enum ENUM_ORDER_FILLING {
+    Fire_or_kill = 0,
+    Immediate_or_cancel = 1,
+    Order_filling_return = 2
+};
+
+input group "---------- Trade Validation ----------";
+input ulong MagicNumber = 2147483647;
 input double Lots = 0.01;
 input int MartingalePointGap = 1000;
 input int TpPoints = 0;
+input int SlPoints = 0;
 input int TslPoints = 100;
 input int IndicatorStopTime = 3;
-
+input int MinimumBars = 100;
+input int Slippage = 10;
+input ENUM_ORDER_FILLING OrderFilling = 1;
+input group "---------- Moving Average Validation ----------";
 input int FastMAPeriod = 50;
 input int SlowMAPeriod = 200;
 input ENUM_MA_METHOD MAMode = MODE_SMA;
@@ -25,20 +37,21 @@ const int PREVIOUS = 1;
 
 class TradeValidator {
    private:
-    double balance;
-    double equity;
     string symbol;
-    double lots;
-    double minLots;
-    double maxLots;
-    double point;
-    double digits;
-
+    double balance, equity;
+    double buyLotSize, sellLotSize, minLotSize, maxLotSize;
+	double lastBuyPrice, lastSellPrice;
+    double point, digits;
+	int buyPositionCount, sellPositionCount;
+	int totalBars;
+    
     void logValidationInfo(string message);
 
    public:
     TradeValidator();
     ~TradeValidator() {};
+
+	void refresh();
 
     bool loadSymbolInfo();
     void loadAccountInfo();
@@ -52,22 +65,49 @@ class TradeValidator {
     bool hasOpenBuyPositions();
     bool hasOpenSellPositions();
 
+	void countBuyPositions();
+	void countSellPositions();
+
+	void updateLastBuyPrice(double price);
+	void updateLastSellPrice(double price);
+	void updateBuyLotSize(bool flag);
+	void updateSellLotSize(bool flag);
+	void updateTotalBars(int bars);
+
+	double validateStopLoss(ENUM_ORDER_TYPE type, double currentPrice);
+    double validateTakeProfit(ENUM_ORDER_TYPE type, double currentPrice);
     bool executeTrade(ENUM_ORDER_TYPE type, double currentPrice, double volume,
                       ulong magic);
     void closePositions(ENUM_ORDER_TYPE type, ENUM_POSITION_TYPE positionType);
-    double validateStopLoss(ENUM_ORDER_TYPE type, double currentPrice);
-    double validateTakeProfit(ENUM_ORDER_TYPE type, double currentPrice);
 
+	string getSymbol() { return symbol; }
     double getBalance() { return balance; }
     double getEquity() { return equity; }
-    string getSymbol() { return symbol; }
-    double getLots() { return lots; }
+	double getBuyLotSize() { return buyLotSize; }
+    double getSellLotSize() { return sellLotSize; }
+	double getLastBuyPrice() { return lastBuyPrice; }
+	double getLastSellPrice() { return lastSellPrice; }
+	double getPoint() { return point; }
+	double getDigits() { return digits; }
+	int getTotalBars() { return totalBars; }
+	double getCountBuyPositions();
+	double getCountSellPositions();
 
     double getBid() { return SymbolInfoDouble(symbol, SYMBOL_BID); }
     double getAsk() { return SymbolInfoDouble(symbol, SYMBOL_ASK); }
 };
 
-TradeValidator::TradeValidator() { symbol = _Symbol; }
+TradeValidator::TradeValidator() {
+	symbol = _Symbol;
+	buyLotSize = Lots;
+	sellLotSize = Lots;
+	totalBars = iBars(_Symbol, PERIOD_CURRENT);
+}
+
+void TradeValidator::refresh() {
+	countBuyPositions();
+	countSellPositions();
+}
 
 void TradeValidator::logValidationInfo(string message) {
     Print("[Validator] ", message);
@@ -76,15 +116,15 @@ void TradeValidator::logValidationInfo(string message) {
 bool TradeValidator::loadSymbolInfo() {
     // basic properties
     digits = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
-    point = SymbolInfoDouble(symbol, SYMBOL_POINT);
+    point = SymbolInfoDouble(symbol, SYMBOL_POINT) * 10;
 
     // trading properties
-    minLots = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
-    maxLots = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
+    minLotSize = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+    maxLotSize = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
 
     // Protection against invalid data
-    if (minLots <= 0) minLots = 0.01;
-    if (maxLots <= 0) maxLots = 100.0;
+    if (minLotSize <= 0) minLotSize = 0.01;
+    if (maxLotSize <= 0) maxLotSize = 100.0;
 
     return true;
 }
@@ -106,7 +146,6 @@ bool TradeValidator::checkHistory(int minimumBars) {
     return true;
 }
 
-
 bool TradeValidator::hasOpenBuyPositions() {
     for (int i = 0; i < PositionsTotal(); i++) {
         if (positionInfo.SelectByIndex(i)) {
@@ -127,10 +166,70 @@ bool TradeValidator::hasOpenSellPositions() {
     return false;
 }
 
+void TradeValidator::countBuyPositions() {
+    for (int i = 0; i < PositionsTotal(); i++) {
+        if (positionInfo.SelectByIndex(i)) {
+            ENUM_POSITION_TYPE ptype = positionInfo.PositionType();
+            if (ptype == POSITION_TYPE_BUY) buyPositionCount++;
+        }
+    }
+}
+
+void TradeValidator::countSellPositions() {
+    for (int i = 0; i < PositionsTotal(); i++) {
+        if (positionInfo.SelectByIndex(i)) {
+            ENUM_POSITION_TYPE ptype = positionInfo.PositionType();
+            if (ptype == POSITION_TYPE_SELL) sellPositionCount++;
+        }
+    }
+}
+
+double TradeValidator::getCountBuyPositions() {
+	countBuyPositions();
+	return buyPositionCount;
+}
+
+double TradeValidator::getCountSellPositions() {
+	countSellPositions();
+	return sellPositionCount;
+}
+
+void TradeValidator::updateBuyLotSize(bool flag) {
+	// trade ?
+	if (flag) {
+		buyLotSize = hasOpenBuyPositions() ? buyLotSize * 2 : Lots;
+	}
+	else {
+		buyLotSize = hasOpenBuyPositions() ? buyLotSize : Lots;
+	}
+	
+}
+
+void TradeValidator::updateSellLotSize(bool flag) {
+	if (flag) {
+		sellLotSize = hasOpenSellPositions() ? sellLotSize * 2 : Lots;
+	}
+	else {
+		sellLotSize = hasOpenSellPositions() ? sellLotSize : Lots;
+	}
+}
+
+void TradeValidator::updateLastBuyPrice(double price) {
+	lastBuyPrice = price;
+}
+
+void TradeValidator::updateLastSellPrice(double price) {
+	lastSellPrice = price;
+}
+
+void TradeValidator::updateTotalBars(int bars) {
+	totalBars = bars;
+}
+
 double TradeValidator::validateStopLoss(ENUM_ORDER_TYPE type,
                                         double currentPrice) {
     if (currentPrice <= 0.0) return 0.0;
-    if (StopLoss <= 0.0) return 0.0;
+    if (SlPoints <= 0.0) return 0.0;
 
     bool isBuy =
         (type == ORDER_TYPE_BUY || type == ORDER_TYPE_BUY_LIMIT ||
@@ -140,10 +239,10 @@ double TradeValidator::validateStopLoss(ENUM_ORDER_TYPE type,
          type == ORDER_TYPE_SELL_STOP || type == ORDER_TYPE_SELL_STOP_LIMIT);
 
     if (isBuy)
-        return NormalizeDouble(currentPrice - (double)StopLoss * _Point,
+        return NormalizeDouble(currentPrice - (double)SlPoints * _Point,
                                _Digits);
     if (isSell)
-        return NormalizeDouble(currentPrice + (double)StopLoss * _Point,
+        return NormalizeDouble(currentPrice + (double)SlPoints * _Point,
                                _Digits);
 
     return 0.0;
@@ -152,7 +251,7 @@ double TradeValidator::validateStopLoss(ENUM_ORDER_TYPE type,
 double TradeValidator::validateTakeProfit(ENUM_ORDER_TYPE type,
                                           double currentPrice) {
     if (currentPrice <= 0.0) return 0.0;
-    if (TakeProfit <= 0.0) return 0.0;
+    if (TpPoints <= 0.0) return 0.0;
 
     bool isBuy =
         (type == ORDER_TYPE_BUY || type == ORDER_TYPE_BUY_LIMIT ||
@@ -162,9 +261,9 @@ double TradeValidator::validateTakeProfit(ENUM_ORDER_TYPE type,
          type == ORDER_TYPE_SELL_STOP || type == ORDER_TYPE_SELL_STOP_LIMIT);
 
     if (isBuy)
-        return NormalizeDouble(currentPrice + TakeProfit * _Point, _Digits);
+        return NormalizeDouble(currentPrice + TpPoints * _Point, _Digits);
     if (isSell)
-        return NormalizeDouble(currentPrice - TakeProfit * _Point, _Digits);
+        return NormalizeDouble(currentPrice - TpPoints * _Point, _Digits);
 
     return 0.0;
 }
@@ -179,7 +278,6 @@ bool TradeValidator::executeTrade(ENUM_ORDER_TYPE type, double currentPrice,
     request.volume = volume;
     request.symbol = symbol;
     request.price = currentPrice;
-    request.sl = validateStopLoss(type, currentPrice);
     request.tp = validateTakeProfit(type, currentPrice);
 
     if (OrderFilling == 0)
@@ -222,14 +320,12 @@ CPositionInfo positionInfo;
 CHistoryOrderInfo historyOrderInfo;
 CDealInfo dealInfo;
 
+TradeValidator validator;
 int totalBars;
-double lastBuyPrice, lastSellPrice, buyLots, sellLots;
 int handleFastMA, handleSlowMA;
 double fastMA[], slowMA[];
 
 int OnInit() {
-    totalBars = iBars(_Symbol, PERIOD_CURRENT);
-
     handleFastMA =
         iMA(_Symbol, PERIOD_CURRENT, FastMAPeriod, 0, MAMode, AppliedPrice);
     handleSlowMA =
@@ -240,6 +336,8 @@ int OnInit() {
         return INIT_FAILED;
     }
 
+	validator.loadSymbolInfo();
+
     ArraySetAsSeries(fastMA, true);
     ArraySetAsSeries(slowMA, true);
 
@@ -249,16 +347,18 @@ int OnInit() {
 void OnDeinit(const int reason) {}
 
 void OnTick() {
+	validator.loadAccountInfo();
     int currentBars = iBars(_Symbol, PERIOD_CURRENT);
-    double bid =
-        NormalizeDouble(SymbolInfoDouble(_Symbol, SYMBOL_BID), _Digits);
-    double ask =
-        NormalizeDouble(SymbolInfoDouble(_Symbol, SYMBOL_ASK), _Digits);
-    bool hasOpenBuyPositions = false, hasOpenSellPositions = false;
+    double bid = validator.getBid();
+    double ask = validator.getAsk();
+    bool hasOpenBuyPositions = validator.hasOpenBuyPositions(), hasOpenSellPositions = validator.hasOpenSellPositions();
     int totalBuyPositions = 0, totalSellPositions = 0;
 
-    if (currentBars != totalBars) {
-        totalBars = currentBars;
+    if (currentBars != validator.getTotalBars()) {
+		validator.refresh();
+		validator.updateBuyLotSize(false);
+		validator.updateSellLotSize(false);
+        validator.updateTotalBars(currentBars);
 
         if (CopyBuffer(handleFastMA, 0, 1, IndicatorStopTime, fastMA) <
                 IndicatorStopTime ||
@@ -268,20 +368,6 @@ void OnTick() {
             return;
         }
 
-        for (int i = 0; i < PositionsTotal(); i++) {
-            if (positionInfo.SelectByIndex(i)) {
-                ENUM_POSITION_TYPE posType = positionInfo.PositionType();
-                if (posType == POSITION_TYPE_BUY) {
-                    hasOpenBuyPositions = true;
-                    totalBuyPositions++;
-                }
-                if (posType == POSITION_TYPE_SELL) {
-                    hasOpenSellPositions = true;
-                    totalSellPositions++;
-                }
-            }
-        }
-
         bool buySignal = fastMA[PREVIOUS] < slowMA[PREVIOUS] &&
                          fastMA[CURRENT] > slowMA[CURRENT];
         bool sellSignal = fastMA[PREVIOUS] > slowMA[PREVIOUS] &&
@@ -289,17 +375,21 @@ void OnTick() {
 
         if (sellSignal) {
             // sell signal
+			Print("Point", validator.getPoint());
             Print("sell signal");
-
+			Print("last sell price : ", validator.getLastSellPrice());
+			Print("gap ?? ", ask - MartingalePointGap * _Point);
             if (hasOpenSellPositions &&
-                lastSellPrice < ask - MartingalePointGap * _Point) {
-                sellLots *= 2;
-                trade.Sell(sellLots, _Symbol, ask, 0.0, 0.0, "");
-                lastSellPrice = ask;
+                validator.getLastSellPrice() < ask - MartingalePointGap * validator.getPoint()) {
+				double volume = validator.getSellLotSize();
+                validator.executeTrade(ORDER_TYPE_SELL, ask, volume, MagicNumber);
+                validator.updateLastSellPrice(ask);
+				validator.updateSellLotSize(true);
             } else if (!hasOpenSellPositions) {
-                trade.Sell(Lots, _Symbol, ask, 0.0, TpPoints, "");
-                lastSellPrice = ask;
-                sellLots = Lots;
+				double volume = validator.getSellLotSize();
+				validator.executeTrade(ORDER_TYPE_SELL, ask, volume, MagicNumber);
+				validator.updateLastSellPrice(ask);
+				validator.updateSellLotSize(true);
             }
         }
         if (buySignal) {
@@ -307,14 +397,16 @@ void OnTick() {
             Print("buy signal");
 
             if (hasOpenBuyPositions &&
-                lastBuyPrice > bid + MartingalePointGap * _Point) {
-                buyLots *= 2;
-                trade.Buy(buyLots, _Symbol, bid, 0.0, 0.0, "");
-                lastBuyPrice = bid;
+                validator.getLastBuyPrice() > bid + MartingalePointGap * _Point) {
+				double volume = validator.getBuyLotSize();
+                validator.executeTrade(ORDER_TYPE_BUY, bid, volume, MagicNumber);
+                validator.updateLastBuyPrice(bid);
+				validator.updateBuyLotSize(true);
             } else if (!hasOpenBuyPositions) {
-                trade.Buy(Lots, _Symbol, bid, 0.0, TpPoints, "");
-                lastBuyPrice = bid;
-                buyLots = Lots;
+                double volume = validator.getBuyLotSize();
+				validator.executeTrade(ORDER_TYPE_BUY, bid, volume, MagicNumber);
+				validator.updateLastBuyPrice(bid);
+				validator.updateBuyLotSize(true);
             }
         }
     }
