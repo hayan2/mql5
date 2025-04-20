@@ -77,7 +77,7 @@ class TradeValidator {
 
     double validateStopLoss(ENUM_ORDER_TYPE type, double currentPrice);
     double validateTakeProfit(ENUM_ORDER_TYPE type, double currentPrice);
-    void validateTralingStop();
+    void validateTrailingStop();
     bool executeTrade(ENUM_ORDER_TYPE type, double currentPrice, double volume,
                       ulong magic);
     void closePositions(ENUM_ORDER_TYPE type, ENUM_POSITION_TYPE positionType);
@@ -268,7 +268,7 @@ double TradeValidator::validateTakeProfit(ENUM_ORDER_TYPE type,
 }
 
 
-void TradeValidator::validateTralingStop() {
+void TradeValidator::validateTrailingStop() {
     if (hasOpenPositions() && TslPoints > 0.0) {
         if (buyPositionCount == 1) {
             for (int i = 0; i < PositionsTotal(); i++) {
@@ -411,7 +411,7 @@ void OnDeinit(const int reason) {}
 
 void OnTick() {
     validator.loadAccountInfo();
-	validator.validateTralingStop();
+	validator.validateTrailingStop();
     int currentBars = iBars(_Symbol, PERIOD_CURRENT);
     double bid = validator.getBid();
     double ask = validator.getAsk();

@@ -126,7 +126,7 @@ bool TradeValidator::checkHistory(int minimumBars) {
 
 bool TradeValidator::calculateLots() {
     double contractSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_CONTRACT_SIZE);
-    lots = MathCeil(balance / contractSize * (TradeMarginPercent / 100) * 100) / 100 - 0.01;	
+    lots = MathCeil(balance / contractSize * (TradeMarginPercent / 100) * 100) / 100 - 0.01;
     if (lots < minLotSize) return false;
     return true;
 }
