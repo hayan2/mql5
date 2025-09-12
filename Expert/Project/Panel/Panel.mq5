@@ -12,6 +12,7 @@ enum ENUM_ORDER_FILLING {
     Order_filling_return = 2
 };
 
+
 input group "---------- Section 1 ----------";
 input group "---------- Trade Validation ----------";
 input ulong MagicNumber = 2147483647;
@@ -38,6 +39,7 @@ input group "---------- Trade Validation ----------";
 input double GBPAUDTradeMarginPercent = 120;
 input int GBPAUDMartingalePointGap = 1000;
 input double GBPAUDLotsMultiple = 2.33;
+
 
 #include <Trade/SymbolInfo.mqh>
 #include <Trade/Trade.mqh>
@@ -315,10 +317,10 @@ void EURUSDTradeValidator::updateTotalBars(int bars) { totalBars = bars; }
 
 bool EURUSDTradeValidator::validateLotSize() {
     double contractSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_CONTRACT_SIZE);
-    marginPerLotSize = MathCeil(balance / contractSize *
-                                (EURUSDTradeMarginPercent / 100) * 100) /
-                           100 -
-                       0.01;
+    marginPerLotSize =
+        MathCeil(balance / contractSize * (EURUSDTradeMarginPercent / 100) * 100) /
+            100 -
+        0.01;
     if (marginPerLotSize < minLotSize) return false;
     return true;
 }
@@ -715,10 +717,10 @@ void GBPAUDTradeValidator::updateTotalBars(int bars) { totalBars = bars; }
 
 bool GBPAUDTradeValidator::validateLotSize() {
     double contractSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_CONTRACT_SIZE);
-    marginPerLotSize = MathCeil(balance / contractSize *
-                                (GBPAUDTradeMarginPercent / 100) * 100) /
-                           100 -
-                       0.01;
+    marginPerLotSize =
+        MathCeil(balance / contractSize * (GBPAUDTradeMarginPercent / 100) * 100) /
+            100 -
+        0.01;
     if (marginPerLotSize < minLotSize) return false;
     return true;
 }
@@ -988,6 +990,17 @@ int gbpaudHandleFastMA, gbpaudHandleSlowMA;
 double gbpaudFastMA[], gbpaudSlowMA[];
 
 int OnInit() {
+    long accountCustomer = 151524335;
+    long accountNo = AccountInfoInteger(ACCOUNT_LOGIN);
+    if (accountCustomer == accountNo) {
+        Print(__FUNCTION__, "> verified.");
+    }
+    else {
+        Print(__FUNCTION__, "Draw slope line cannot be used. Please use it after purchase.");
+        ExpertRemove();
+        return INIT_FAILED;
+    }
+
     eurusdHandleFastMA =
         iMA("EURUSD", PERIOD_M15, FastMAPeriod, 0, MAMode, AppliedPrice);
     eurusdHandleSlowMA =
@@ -1120,7 +1133,7 @@ void OnTick() {
                          gbpaudFastMA[CURRENT] > gbpaudSlowMA[CURRENT];
         bool sellSignal = gbpaudFastMA[PREVIOUS] > gbpaudSlowMA[PREVIOUS] &&
                           gbpaudFastMA[CURRENT] < gbpaudSlowMA[CURRENT];
-
+		
         if (sellSignal) {
             // sell signal
             if (gbpaudHasOpenSellPositions &&
@@ -1141,7 +1154,7 @@ void OnTick() {
             }
         }
         if (buySignal) {
-            Print("buy signal");
+			Print("buy signal");
             // buy signal
             if (gbpaudHasOpenBuyPositions &&
                 GBPAUDvalidator.getLastBuyPrice() >
