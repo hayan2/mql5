@@ -77,7 +77,7 @@ class TradeValidator {
     void updateSellLotSize(bool flag);
     void updateTotalBars(int bars);
 
-	bool validateLotSize();
+    bool validateLotSize();
     double validateStopLoss(ENUM_ORDER_TYPE type, double currentPrice);
     double validateTakeProfit(ENUM_ORDER_TYPE type, double currentPrice);
     void validateTrailingStop();
@@ -172,25 +172,25 @@ bool TradeValidator::hasOpenSellPositions() {
 }
 
 void TradeValidator::countBuyPositions() {
-	int tmp = 0;
+    int tmp = 0;
     for (int i = 0; i < PositionsTotal(); i++) {
         if (positionInfo.SelectByIndex(i)) {
             ENUM_POSITION_TYPE ptype = positionInfo.PositionType();
             if (ptype == POSITION_TYPE_BUY) tmp++;
         }
     }
-	buyPositionCount = tmp;
+    buyPositionCount = tmp;
 }
 
 void TradeValidator::countSellPositions() {
-	int tmp = 0;
+    int tmp = 0;
     for (int i = 0; i < PositionsTotal(); i++) {
         if (positionInfo.SelectByIndex(i)) {
             ENUM_POSITION_TYPE ptype = positionInfo.PositionType();
             if (ptype == POSITION_TYPE_SELL) tmp++;
         }
     }
-	sellPositionCount = tmp;
+    sellPositionCount = tmp;
 }
 
 double TradeValidator::getCountBuyPositions() {
@@ -206,7 +206,9 @@ double TradeValidator::getCountSellPositions() {
 void TradeValidator::updateBuyLotSize(bool flag) {
     // trade ?
     if (flag) {
-        buyLotSize = hasOpenBuyPositions() ? NormalizeDouble(buyLotSize * LotsMultiple, 2) : marginPerLotSize;
+        buyLotSize = hasOpenBuyPositions()
+                         ? NormalizeDouble(buyLotSize * LotsMultiple, 2)
+                         : marginPerLotSize;
     } else {
         buyLotSize = hasOpenBuyPositions() ? buyLotSize : marginPerLotSize;
     }
@@ -214,7 +216,9 @@ void TradeValidator::updateBuyLotSize(bool flag) {
 
 void TradeValidator::updateSellLotSize(bool flag) {
     if (flag) {
-        sellLotSize = hasOpenSellPositions() ? NormalizeDouble(sellLotSize * LotsMultiple, 2) : marginPerLotSize;
+        sellLotSize = hasOpenSellPositions()
+                          ? NormalizeDouble(sellLotSize * LotsMultiple, 2)
+                          : marginPerLotSize;
     } else {
         sellLotSize = hasOpenSellPositions() ? sellLotSize : marginPerLotSize;
     }
@@ -229,10 +233,13 @@ void TradeValidator::updateLastSellPrice(double price) {
 void TradeValidator::updateTotalBars(int bars) { totalBars = bars; }
 
 bool TradeValidator::validateLotSize() {
-	double contractSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_CONTRACT_SIZE);
-    marginPerLotSize = MathCeil(balance / contractSize * (TradeMarginPercent / 100) * 100) / 100 - 0.01;
+    double contractSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_CONTRACT_SIZE);
+    marginPerLotSize =
+        MathCeil(balance / contractSize * (TradeMarginPercent / 100) * 100) /
+            100 -
+        0.01;
     if (marginPerLotSize < minLotSize) return false;
-	return true;
+    return true;
 }
 
 double TradeValidator::validateStopLoss(ENUM_ORDER_TYPE type,
@@ -277,7 +284,6 @@ double TradeValidator::validateTakeProfit(ENUM_ORDER_TYPE type,
     return 0.0;
 }
 
-
 void TradeValidator::validateTrailingStop() {
     if (hasOpenPositions() && TslPoints > 0.0) {
         if (buyPositionCount == 1) {
@@ -292,123 +298,150 @@ void TradeValidator::validateTrailingStop() {
                             PositionGetDouble(POSITION_PRICE_OPEN);
                         double posSl = PositionGetDouble(POSITION_SL);
                         double posTp = PositionGetDouble(POSITION_TP);
-						
-						if (getBid() > posOpenPrice + TslTriggerPoints * point) {
-							double sl = NormalizeDouble(getBid() - TslPoints * point, digits);
 
-							if (sl > posSl) {
-								if (trade.PositionModify(posTicket, sl, posTp)) {
-									Print(__FUNCTION__ " > Position ticket # ", posTicket, " was modified.");
-								}
-							}
-						}
+                        if (getBid() >
+                            posOpenPrice + TslTriggerPoints * point) {
+                            double sl = NormalizeDouble(
+                                getBid() - TslPoints * point, digits);
+
+                            if (sl > posSl) {
+                                if (trade.PositionModify(posTicket, sl,
+                                                         posTp)) {
+                                    Print(__FUNCTION__ " > Position ticket # ",
+                                          posTicket, " was modified.");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (buyPositionCount > 1) {
+            double positionValue = 0.0, positionLots = 0.0, tsl = 0.0;
+
+            for (int i = 0; i < PositionsTotal(); i++) {
+                ulong posTicket = PositionGetTicket(i);
+                long posType = PositionGetInteger(POSITION_TYPE);
+
+                if (PositionSelectByTicket(posTicket)) {
+                    if (PositionGetString(POSITION_SYMBOL) == symbol &&
+                        posType == POSITION_TYPE_BUY) {
+                        positionValue +=
+                            PositionGetDouble(POSITION_PRICE_OPEN) *
+                            PositionGetDouble(POSITION_VOLUME);
+                        positionLots += PositionGetDouble(POSITION_VOLUME);
+                    }
+                }
+            }
+
+            tsl = positionValue / positionLots;
+
+            if (getBid() > tsl + TslTriggerPoints * point) {
+                for (int i = 0; i < PositionsTotal(); i++) {
+                    ulong posTicket = PositionGetTicket(i);
+                    long posType = PositionGetInteger(POSITION_TYPE);
+
+                    if (PositionSelectByTicket(posTicket)) {
+                        if (PositionGetString(POSITION_SYMBOL) == symbol &&
+                            posType == POSITION_TYPE_BUY) {
+                            double posOpenPrice =
+                                PositionGetDouble(POSITION_PRICE_OPEN);
+                            double posSl = PositionGetDouble(POSITION_SL);
+                            double posTp = PositionGetDouble(POSITION_TP);
+
+                            double sl = NormalizeDouble(
+                                getBid() - TslPoints * point, digits);
+                            if (sl > posSl) {
+                                if (trade.PositionModify(posTicket, sl,
+                                                         posTp)) {
+                                    Print(__FUNCTION__ " > Position ticket # ",
+                                          posTicket,
+                                          " was modified by multiple trailing "
+                                          "stop.");
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
-		else if (buyPositionCount > 1) {
-			double positionValue = 0.0, positionLots = 0.0, tsl = 0.0;
-
-			for (int i = 0; i < PositionsTotal(); i++) {
-				ulong posTicket = PositionGetTicket(i);
-				long posType = PositionGetInteger(POSITION_TYPE);
-
-				if (PositionSelectByTicket(posTicket)) {
-					if (PositionGetString(POSITION_SYMBOL) == symbol && posType == POSITION_TYPE_BUY) {
-						positionValue += PositionGetDouble(POSITION_PRICE_OPEN) * PositionGetDouble(POSITION_VOLUME);
-						positionLots += PositionGetDouble(POSITION_VOLUME);
-					}
-				}
-			}
-
-			tsl = positionValue / positionLots;
-
-			if (getBid() > tsl + TslTriggerPoints * point) {
-				for (int i = 0; i < PositionsTotal(); i++) {
-					ulong posTicket = PositionGetTicket(i);
-					long posType = PositionGetInteger(POSITION_TYPE);
-
-					if (PositionSelectByTicket(posTicket)) {
-						if (PositionGetString(POSITION_SYMBOL) == symbol && posType == POSITION_TYPE_BUY) {
-							double posOpenPrice = PositionGetDouble(POSITION_PRICE_OPEN);
-							double posSl = PositionGetDouble(POSITION_SL);
-							double posTp = PositionGetDouble(POSITION_TP);
-
-							double sl = NormalizeDouble(getBid() - TslPoints * point, digits);
-							if (sl > posSl) {
-								if (trade.PositionModify(posTicket, sl, posTp)) {
-									Print(__FUNCTION__ " > Position ticket # ", posTicket, " was modified by multiple trailing stop.");
-								}
-							}
-						}
-					}
-				}
-			}
-		}
         if (sellPositionCount == 1) {
             for (int i = 0; i < PositionsTotal(); i++) {
                 ulong posTicket = PositionGetTicket(i);
-				long posType = PositionGetInteger(POSITION_TYPE);
-				
+                long posType = PositionGetInteger(POSITION_TYPE);
+
                 if (PositionSelectByTicket(posTicket)) {
-                    if (PositionGetString(POSITION_SYMBOL) == symbol && posType == POSITION_TYPE_SELL) {
+                    if (PositionGetString(POSITION_SYMBOL) == symbol &&
+                        posType == POSITION_TYPE_SELL) {
                         double posOpenPrice =
                             PositionGetDouble(POSITION_PRICE_OPEN);
                         double posSl = PositionGetDouble(POSITION_SL);
                         double posTp = PositionGetDouble(POSITION_TP);
 
-						if (getAsk() < posOpenPrice - TslTriggerPoints * point) {
-							double sl = NormalizeDouble(getAsk() + TslPoints * point, digits);
+                        if (getAsk() <
+                            posOpenPrice - TslTriggerPoints * point) {
+                            double sl = NormalizeDouble(
+                                getAsk() + TslPoints * point, digits);
 
-							if ((sl < posSl || posSl == 0.0) && sl != posSl) {
-								if (trade.PositionModify(posTicket, sl, posTp)) {
-									Print(__FUNCTION__ " > Position ticket # ", posTicket, " was modified.");
-								}
-							}
-						}
+                            if ((sl < posSl || posSl == 0.0) && sl != posSl) {
+                                if (trade.PositionModify(posTicket, sl,
+                                                         posTp)) {
+                                    Print(__FUNCTION__ " > Position ticket # ",
+                                          posTicket, " was modified.");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (sellPositionCount > 1) {
+            double positionValue = 0.0, positionLots = 0.0, tsl = 0.0;
+
+            for (int i = 0; i < PositionsTotal(); i++) {
+                ulong posTicket = PositionGetTicket(i);
+                long posType = PositionGetInteger(POSITION_TYPE);
+
+                if (PositionSelectByTicket(posTicket)) {
+                    if (PositionGetString(POSITION_SYMBOL) == symbol &&
+                        posType == POSITION_TYPE_SELL) {
+                        positionValue +=
+                            PositionGetDouble(POSITION_PRICE_OPEN) *
+                            PositionGetDouble(POSITION_VOLUME);
+                        positionLots += PositionGetDouble(POSITION_VOLUME);
+                    }
+                }
+            }
+
+            tsl = positionValue / positionLots;
+
+            if (getAsk() < tsl - TslTriggerPoints * point) {
+                for (int i = 0; i < PositionsTotal(); i++) {
+                    ulong posTicket = PositionGetTicket(i);
+                    long posType = PositionGetInteger(POSITION_TYPE);
+
+                    if (PositionSelectByTicket(posTicket)) {
+                        if (PositionGetString(POSITION_SYMBOL) == symbol &&
+                            posType == POSITION_TYPE_SELL) {
+                            double posOpenPrice =
+                                PositionGetDouble(POSITION_PRICE_OPEN);
+                            double posSl = PositionGetDouble(POSITION_SL);
+                            double posTp = PositionGetDouble(POSITION_TP);
+
+                            double sl = NormalizeDouble(
+                                getAsk() + TslPoints * point, digits);
+                            if ((sl < posSl || posSl == 0.0) && sl != posSl) {
+                                if (trade.PositionModify(posTicket, sl,
+                                                         posTp)) {
+                                    Print(__FUNCTION__ " > Position ticket # ",
+                                          posTicket,
+                                          " was modified by multiple trailing "
+                                          "stop.");
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
-		else if (sellPositionCount > 1) {
-			double positionValue = 0.0, positionLots = 0.0, tsl = 0.0;
-
-			for (int i = 0; i < PositionsTotal(); i++) {
-				ulong posTicket = PositionGetTicket(i);
-				long posType = PositionGetInteger(POSITION_TYPE);
-
-				if (PositionSelectByTicket(posTicket)) {
-					if (PositionGetString(POSITION_SYMBOL) == symbol && posType == POSITION_TYPE_SELL) {
-						positionValue += PositionGetDouble(POSITION_PRICE_OPEN) * PositionGetDouble(POSITION_VOLUME);
-						positionLots += PositionGetDouble(POSITION_VOLUME);
-					}
-				}
-			}
-
-			tsl = positionValue / positionLots;
-
-			if (getAsk() < tsl - TslTriggerPoints * point) {
-				for (int i = 0; i < PositionsTotal(); i++) {
-					ulong posTicket = PositionGetTicket(i);
-					long posType = PositionGetInteger(POSITION_TYPE);
-
-					if (PositionSelectByTicket(posTicket)) {
-						if (PositionGetString(POSITION_SYMBOL) == symbol && posType == POSITION_TYPE_SELL) {
-							double posOpenPrice = PositionGetDouble(POSITION_PRICE_OPEN);
-							double posSl = PositionGetDouble(POSITION_SL);
-							double posTp = PositionGetDouble(POSITION_TP);
-							
-							double sl = NormalizeDouble(getAsk() + TslPoints * point, digits);
-							if ((sl < posSl || posSl == 0.0) && sl != posSl) {
-								if (trade.PositionModify(posTicket, sl, posTp)) {
-									Print(__FUNCTION__ " > Position ticket # ", posTicket, " was modified by multiple trailing stop.");
-								}
-							}
-						}
-					}
-				}
-			}
-		}
     }
 }
 
@@ -492,15 +525,14 @@ void OnDeinit(const int reason) {}
 
 void OnTick() {
     validator.loadAccountInfo();
-	validator.validateTrailingStop();
+    validator.validateTrailingStop();
     int currentBars = iBars(_Symbol, PERIOD_CURRENT);
     double bid = validator.getBid();
     double ask = validator.getAsk();
     bool hasOpenBuyPositions = validator.hasOpenBuyPositions(),
          hasOpenSellPositions = validator.hasOpenSellPositions();
-	
-	validator.validateLotSize();
 
+    validator.validateLotSize();
 
     if (currentBars != validator.getTotalBars()) {
         validator.refresh();
@@ -508,10 +540,8 @@ void OnTick() {
         validator.updateSellLotSize(false);
         validator.updateTotalBars(currentBars);
 
-        if (CopyBuffer(handleFastMA, 0, 1, IndicatorStopTime, fastMA) <
-                IndicatorStopTime ||
-            CopyBuffer(handleSlowMA, 0, 1, IndicatorStopTime, slowMA) <
-                IndicatorStopTime) {
+        if (CopyBuffer(handleFastMA, 0, 1, IndicatorStopTime, fastMA) < IndicatorStopTime ||
+            CopyBuffer(handleSlowMA, 0, 1, IndicatorStopTime, slowMA) < IndicatorStopTime) {
             Print("Failed copying indicator values. ", GetLastError());
             return;
         }
